@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "providerId": "outlook-calendar",
+  "name": "Outlook Calendar",
+  "description": "Sync selected work or personal Outlook calendars into your local calendar.",
+  "category": "Calendar",
+  "icon": "calendar-days",
+  "pluginId": "outlook-calendar-connector",
+  "pluginName": "Outlook Calendar connector",
+  "domainId": "personal-productivity",
+  "auth": {
+    "type": "oauth2-pkce",
+    "platform": "desktop"
+  },
+  "sync": {
+    "jobType": "data_sync",
+    "intervalMinutes": 360,
+    "strategy": "delta-link"
+  },
+  "dataWrites": [
+    "calendar_events"
+  ],
+  "brandIcon": "outlook.svg"
+}

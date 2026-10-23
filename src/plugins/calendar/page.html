@@ -1,0 +1,26 @@
+<section class="page-view personal-page calendar-page" id="calendar">
+  <div class="calendar-app-toolbar">
+    <div class="calendar-app-title"><h1 id="calendar-month-title">Calendar</h1><span class="calendar-period"></span><a class="icon-button calendar-plugin-settings-link" href="#plugins/calendar/settings" aria-label="Calendar plugin settings" title="Calendar settings"><i data-lucide="settings" class="icon" aria-hidden="true"></i></a></div>
+    <div class="calendar-app-actions">
+      <div class="calendar-view-switch" role="group" aria-label="Calendar view"><button type="button" data-calendar-view="week" class="active">Week</button><button type="button" data-calendar-view="month">Month</button><button type="button" data-calendar-view="list">Agenda</button></div>
+      <button class="button button-secondary button-small" type="button" data-calendar-nav="today">Today</button>
+      <div class="calendar-navigation"><button class="icon-button" type="button" data-calendar-nav="previous" aria-label="Previous period"><i data-lucide="chevron-left" class="icon"></i></button><button class="icon-button" type="button" data-calendar-nav="next" aria-label="Next period"><i data-lucide="chevron-right" class="icon"></i></button></div>
+      <input class="calendar-search" type="search" placeholder="Search" aria-label="Search calendar events">
+      <button class="button button-primary calendar-new-event" type="button" data-action="new-event"><i data-lucide="plus" class="icon button-leading-icon" aria-hidden="true"></i> New event</button>
+    </div>
+  </div>
+  <div class="calendar-layout">
+    <aside class="component-card calendar-left-rail">
+      <div class="calendar-mini-head"><strong id="calendar-mini-title"></strong><div><button type="button" class="icon-button" data-mini-nav="previous" aria-label="Previous month"><i data-lucide="chevron-left" class="icon"></i></button><button type="button" class="icon-button" data-mini-nav="next" aria-label="Next month"><i data-lucide="chevron-right" class="icon"></i></button></div></div>
+      <div id="calendar-mini-month" class="calendar-mini-month"></div>
+      <div class="calendar-rail-section"><p class="calendar-rail-label">On this device</p><label class="calendar-account-line"><input class="calendar-visibility-toggle" type="checkbox" data-calendar-source="local" checked><span class="calendar-check local"></span><span>Local calendar</span><span class="calendar-color-dot"></span></label></div>
+      <div class="calendar-rail-section"><p class="calendar-rail-label">Connected calendars</p><div id="calendar-integration-summary" class="calendar-integration-summary"></div><a class="calendar-add-account" href="#integrations">＋ Add calendar account</a></div>
+    </aside>
+    <div id="calendar-board" class="component-card calendar-board" aria-live="polite"></div>
+    <aside class="calendar-right-rail">
+      <section class="component-card calendar-side-panel"><div class="calendar-panel-heading"><h2>Upcoming</h2><button class="icon-button calendar-sidepanel-toggle" type="button" data-calendar-sidepanel-toggle aria-label="Collapse calendar side panel" title="Collapse side panel" aria-expanded="true"><i data-lucide="chevron-right" class="icon" aria-hidden="true"></i></button></div><div id="calendar-upcoming" class="calendar-upcoming"></div></section>
+      <section class="component-card calendar-side-panel calendar-schedule-prompt"><h2>Make room for what matters</h2><p class="calendar-side-copy">Turn an intention into a block of time, then keep the open space visible.</p><button class="button button-secondary button-small" type="button" data-action="new-event">＋ Add time block</button></section>
+      <section class="component-card calendar-side-panel calendar-shortcuts"><h2>Useful shortcuts</h2><p><kbd>T</kbd> Go to today</p><p><kbd>J</kbd> Next day/week</p><p><kbd>K</kbd> Previous day/week</p><p><kbd>W</kbd> Week view <kbd>M</kbd> Month</p></section>
+    </aside>
+  </div>
+</section>

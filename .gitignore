@@ -1,0 +1,18 @@
+# Installed dependencies and generated app bundles
+node_modules/
+dist/
+out/
+release/
+coverage/
+.vite/
+
+# Local credentials and app database files
+.env*
+!.env.example
+*.sqlite*
+*.db
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log

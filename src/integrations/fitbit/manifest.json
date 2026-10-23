@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "providerId": "fitbit",
+  "name": "Fitbit Web API (legacy)",
+  "description": "Connect with OAuth and import sleep and weigh-ins. This API is scheduled to shut down October 30, 2026.",
+  "category": "Health",
+  "icon": "activity",
+  "brandIcon": "fitbit.svg",
+  "pluginId": "fitbit-connector",
+  "pluginName": "Fitbit connector",
+  "domainId": "personal-health",
+  "auth": { "type": "oauth2-pkce", "platform": "desktop" },
+  "sync": { "jobType": "data_sync", "intervalMinutes": 360, "strategy": "date-window" },
+  "dataWrites": ["health_sleep", "health_weight"]
+}

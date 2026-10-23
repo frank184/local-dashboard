@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "calendar",
+  "name": "Calendar",
+  "version": "0.1.0",
+  "domainId": "personal-productivity",
+  "kind": "feature",
+  "description": "A local-first calendar for planning your time.",
+  "icon": "calendar-days",
+  "navigation": { "section": "Personal", "order": 10 },
+  "ui": { "page": "page.html", "contributes": ["navigation", "page"] },
+  "data": { "reads": ["calendar_events"], "writes": ["calendar_events"] }
+}

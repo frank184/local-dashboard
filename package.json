@@ -1,0 +1,20 @@
+{
+  "name": "local-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first, plugin-driven desktop dashboard",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "npm run build && electron .",
+    "build": "vite build",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "lucide": "^1.61.0"
+  }
+}

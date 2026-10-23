@@ -1,0 +1,67 @@
+<section class="page-view" id="design-system">
+          <p class="eyebrow">UI WORKSHOP</p>
+          <h1>Design system</h1>
+          <p class="intro">A living palette of the colors, type, and components used across the app.</p>
+
+          <div class="design-section">
+            <div class="design-heading"><div><h2>Color palette</h2><p>Core interface colors and semantic states.</p></div><span class="component-label">TOKENS</span></div>
+            <div class="swatch-grid">
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-primary)"></span><span><strong>Forest</strong><small>Primary · #39755A</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-primary-soft)"></span><span><strong>Mint wash</strong><small>Primary subtle · #EDF4EF</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-canvas)"></span><span><strong>Canvas</strong><small>App background · #F7F8F6</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-text)"></span><span><strong>Ink</strong><small>Primary text · #202923</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-success)"></span><span><strong>Success</strong><small>Connected · #40845D</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-warning)"></span><span><strong>Attention</strong><small>Needs review · #A46D28</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-danger)"></span><span><strong>Danger</strong><small>Errors · #A95050</small></span></div>
+              <div class="swatch"><span class="swatch-color" style="--swatch: var(--color-border)"></span><span><strong>Border</strong><small>Dividers · #E3E9E3</small></span></div>
+            </div>
+          </div>
+
+          <div class="design-section">
+            <div class="design-heading"><div><h2>Buttons</h2><p>Action styles for common and destructive actions.</p></div><span class="component-label">ACTIONS</span></div>
+            <div class="component-card button-row">
+              <button class="button button-primary" type="button">Primary action <i data-lucide="arrow-right" class="icon button-arrow" aria-hidden="true"></i></button>
+              <button class="button button-secondary" type="button">Secondary</button>
+              <button class="button button-quiet" type="button">Quiet action</button>
+              <button class="button button-danger" type="button">Remove plugin</button>
+              <button class="button button-secondary" type="button" disabled>Disabled</button>
+            </div>
+          </div>
+
+          <div class="design-section">
+            <div class="design-heading"><div><h2>Form controls</h2><p>Inputs and selectors for plugin setup and settings.</p></div><span class="component-label">INPUTS</span></div>
+            <div class="component-card form-grid">
+              <label class="field">Plugin name<input type="text" value="Fitbit" /></label>
+              <label class="field">Sync frequency<select><option>Every 12 hours</option><option>Daily</option><option>Manual only</option></select></label>
+              <label class="field field-wide">Private note<textarea rows="3" placeholder="Add a note for this connection…"></textarea></label>
+            </div>
+          </div>
+
+          <div class="design-section">
+            <div class="design-heading"><div><h2>Status and category</h2><p>Compact labels for connection state and plugin domains.</p></div><span class="component-label">BADGES</span></div>
+            <div class="component-card badge-row">
+              <span class="badge badge-success"><i></i> Connected</span>
+              <span class="badge badge-warning"><i></i> Needs attention</span>
+              <span class="badge badge-neutral"><i></i> Local only</span>
+              <span class="badge badge-domain">Personal health</span>
+              <span class="badge badge-domain badge-blue">Productivity</span>
+            </div>
+          </div>
+
+          <div class="design-section">
+            <div class="design-heading"><div><h2>Cards and data</h2><p>Reusable surfaces for plugin summaries and recent records.</p></div><span class="component-label">SURFACES</span></div>
+            <div class="example-grid">
+              <article class="component-card metric-card"><div class="metric-top"><span class="metric-icon"><i data-lucide="activity" class="icon" aria-hidden="true"></i></span><span class="badge badge-success"><i></i> Synced</span></div><p class="metric-label">Average sleep · last 7 days</p><div class="metric-value">7h 42m</div><p class="metric-caption">Up 18 minutes from the previous week</p></article>
+              <article class="component-card plugin-card"><div class="plugin-card-top"><span class="plugin-symbol"><i data-lucide="watch" class="icon" aria-hidden="true"></i></span><span class="badge badge-neutral"><i></i> Local data</span></div><h3>Fitbit</h3><p>Sleep and activity data from your connected device.</p><div class="plugin-card-bottom"><span class="badge badge-domain">Personal health</span><button class="text-button" type="button">Configure <i data-lucide="arrow-right" class="icon button-arrow" aria-hidden="true"></i></button></div></article>
+            </div>
+            <div class="component-card table-card">
+              <div class="table-heading"><div><h3>Recent sleep</h3><p>Example data table component</p></div><button class="button button-secondary button-small" type="button">View all</button></div>
+              <div class="table-scroll"><table><thead><tr><th>Night</th><th>Duration</th><th>Quality</th><th>Source</th></tr></thead><tbody><tr><td>Tuesday, Oct 20</td><td>7h 51m</td><td><span class="badge badge-success"><i></i> Good</span></td><td>Fitbit</td></tr><tr><td>Monday, Oct 19</td><td>6h 58m</td><td><span class="badge badge-warning"><i></i> Fair</span></td><td>Fitbit</td></tr><tr><td>Sunday, Oct 18</td><td>8h 12m</td><td><span class="badge badge-success"><i></i> Good</span></td><td>Fitbit</td></tr></tbody></table></div>
+            </div>
+          </div>
+
+          <div class="design-section">
+            <div class="design-heading"><div><h2>Empty state</h2><p>A calm starting point when a plugin has no data yet.</p></div><span class="component-label">FEEDBACK</span></div>
+            <div class="component-card empty-state"><div class="empty-mark"><i data-lucide="clock" class="icon" aria-hidden="true"></i></div><strong>No measurements yet</strong><span>Connect a data source or import a file to see your history here.</span><button class="button button-secondary button-small" type="button">Connect a source</button></div>
+          </div>
+        </section>

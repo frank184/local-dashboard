@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Local Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark"><i data-lucide="layout-dashboard" class="icon" aria-hidden="true"></i></span><span>Local Dashboard</span></div>
+      <button class="icon-button sidebar-toggle" type="button" aria-expanded="true" aria-label="Collapse navigation" aria-controls="main-navigation" title="Collapse navigation"><i data-lucide="chevron-left" class="icon" aria-hidden="true"></i><span>Collapse navigation</span></button>
+      <nav id="main-navigation" aria-label="Main navigation">
+        <div class="nav-group">
+          <span class="nav-section-label">Workspace</span>
+          <a class="nav-item" href="#overview" title="Overview" aria-label="Overview"><i data-lucide="layout-dashboard" class="icon" aria-hidden="true"></i> Overview</a>
+          <a class="nav-item" href="#plugins" title="Plugins" aria-label="Plugins"><i data-lucide="blocks" class="icon" aria-hidden="true"></i> Plugins</a>
+          <a class="nav-item" href="#integrations" title="Integrations" aria-label="Integrations"><i data-lucide="cable" class="icon" aria-hidden="true"></i> Integrations</a>
+          <a class="nav-item" href="#workflows" title="Workflows" aria-label="Workflows"><i data-lucide="workflow" class="icon" aria-hidden="true"></i> Workflows</a>
+        </div>
+        <div class="nav-divider" role="separator"></div>
+        <div class="nav-group">
+          <span class="nav-section-label">Personal</span>
+          <div class="feature-nav-links" id="feature-plugin-navigation"></div>
+        </div>
+        <div class="nav-divider" role="separator"></div>
+        <div class="nav-group">
+          <span class="nav-section-label">Build</span>
+          <a class="nav-item" href="#design-system" title="Design system" aria-label="Design system"><i data-lucide="palette" class="icon" aria-hidden="true"></i> Design system</a>
+        </div>
+      </nav>
+      <div class="sidebar-footer"><span class="status-dot"></span> Running on this device</div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <span id="current-page-label">Overview</span>
+        <div class="topbar-actions">
+          <button class="icon-button theme-toggle" type="button" aria-label="Dark mode" aria-pressed="false" title="Switch to dark mode"><i data-lucide="moon" class="icon" aria-hidden="true"></i></button>
+          <button class="avatar" aria-label="Settings" title="Settings">JD</button>
+        </div>
+      </header>
+      <div class="content">
+        <div id="page-root" aria-live="polite"></div>
+        <footer>Local Dashboard <span>·</span> Your data stays on this device</footer>
+      </div>
+    </main>
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

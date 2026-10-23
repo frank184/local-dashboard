@@ -1,0 +1,31 @@
+<section class="page-view health-page personal-page" id="health">
+          <p class="eyebrow">PERSONAL HEALTH</p>
+          <div class="health-title-row">
+            <div><h1>Health</h1><p class="intro">Sleep, weight, and activity from your local sources.</p></div>
+            <span class="badge badge-neutral"><i></i> LOCAL SAMPLE</span>
+          </div>
+
+          <div class="health-source-row component-card">
+            <span class="health-source-icon"><i data-lucide="watch" class="icon" aria-hidden="true"></i></span>
+            <div class="health-source-copy"><strong>Health sources</strong><small>Example connections for the dashboard preview</small></div>
+            <div class="health-source-list"><span class="source-pill"><i data-lucide="activity" class="icon" aria-hidden="true"></i> Fitbit</span><span class="source-pill"><i data-lucide="scale" class="icon" aria-hidden="true"></i> Withings</span></div>
+          </div>
+
+          <div class="health-metrics-grid">
+            <article class="component-card health-metric"><div class="health-metric-label"><i data-lucide="moon" class="icon" aria-hidden="true"></i> Average sleep</div><div class="health-metric-value">7h 32m</div><div class="health-metric-foot">Last 7 nights <span class="metric-change positive">+24 min</span></div></article>
+            <article class="component-card health-metric"><div class="health-metric-label"><i data-lucide="scale" class="icon" aria-hidden="true"></i> Latest weight</div><div class="health-metric-value">72.4 <small>kg</small></div><div class="health-metric-foot">Measured Oct 21 <span class="metric-change">Withings</span></div></article>
+            <article class="component-card health-metric"><div class="health-metric-label"><i data-lucide="calendar-days" class="icon" aria-hidden="true"></i> Active days</div><div class="health-metric-value">5 <small>/ 7</small></div><div class="health-metric-foot">This week <span class="metric-change positive">On track</span></div></article>
+          </div>
+
+          <div class="health-chart-grid">
+            <article class="component-card chart-card">
+              <div class="chart-card-heading"><div><h2>Sleep duration</h2><p>Hours per night · last 14 days</p></div><span class="chart-source"><i data-lucide="activity" class="icon" aria-hidden="true"></i> Fitbit</span></div>
+              <div class="chart-container"><canvas id="sleep-chart" role="img" aria-label="Mock sleep duration over the past 14 days"></canvas></div>
+            </article>
+            <article class="component-card chart-card">
+              <div class="chart-card-heading"><div><h2>Weight trend</h2><p>Kilograms · last 14 days</p></div><span class="chart-source"><i data-lucide="scale" class="icon" aria-hidden="true"></i> Withings</span></div>
+              <div class="chart-container"><canvas id="weight-chart" role="img" aria-label="Mock weight measurements over the past 14 days"></canvas></div>
+            </article>
+          </div>
+          <p class="mock-data-note"><i data-lucide="info" class="icon" aria-hidden="true"></i> Starter measurements are stored locally in SQLite. Connector plugins can add records to the same data contracts.</p>
+        </section>

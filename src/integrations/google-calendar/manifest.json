@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "providerId": "google-calendar",
+  "name": "Google Calendar",
+  "description": "Sync selected calendars from multiple Google accounts into your local calendar.",
+  "category": "Calendar",
+  "icon": "calendar-days",
+  "brandIcon": "google-calendar.svg",
+  "pluginId": "google-calendar-connector",
+  "pluginName": "Google Calendar connector",
+  "domainId": "personal-productivity",
+  "auth": { "type": "oauth2-pkce", "platform": "desktop" },
+  "sync": { "jobType": "data_sync", "intervalMinutes": 360, "strategy": "sync-token" },
+  "dataWrites": ["calendar_events"]
+}

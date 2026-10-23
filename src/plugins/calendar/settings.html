@@ -1,0 +1,16 @@
+<section class="page-view plugin-settings-page" id="calendar-plugin-settings">
+  <a class="text-link plugin-settings-back" href="#plugins"><i data-lucide="arrow-left" class="icon" aria-hidden="true"></i> Plugins</a>
+  <div class="plugin-settings-heading">
+    <span class="plugin-app-icon"><i data-lucide="calendar-days" class="icon" aria-hidden="true"></i></span>
+    <div><p class="eyebrow">PLUGIN SETTINGS</p><h1>Calendar</h1><p class="intro">Configure the calendar experience for this workspace.</p></div>
+  </div>
+  <form id="calendar-settings-form" class="component-card plugin-settings-form">
+    <div class="section-heading"><h2>Visible hours</h2><p>Choose which part of each day appears in the week and day views.</p></div>
+    <div class="calendar-hour-settings-row">
+      <label class="field">Day starts at<select name="startHour" required></select></label>
+      <label class="field">Day ends at<select name="endHour" required></select></label>
+    </div>
+    <p class="dialog-copy">The end time is exclusive. A range from 12 AM to 12 AM shows the full day, with hour rows labeled 12 AM through 11 PM. Scroll within the calendar to move through the day.</p>
+    <div class="plugin-settings-footer"><span id="calendar-settings-status" role="status"></span><button class="button button-primary" type="submit">Save settings</button></div>
+  </form>
+</section>
