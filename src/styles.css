@@ -751,7 +751,6 @@ html {
 
 /* Give routed pages the full main-column width as the navigation rail collapses. */
 @media (max-width: 1000px) {
-  .integration-provider-grid,
   .plugin-card-grid { grid-template-columns: minmax(0, 1fr); }
   .integration-connection-card { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .integration-connection-card > .integration-row-actions { grid-column: 1 / -1; justify-content: flex-start; }
