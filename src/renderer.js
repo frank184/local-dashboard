@@ -42,12 +42,13 @@ import {
   Filler,
   LineController,
   LineElement,
+  Legend,
   LinearScale,
   PointElement,
   Tooltip,
 } from 'chart.js';
 
-Chart.register(CategoryScale, Filler, LineController, LineElement, LinearScale, PointElement, Tooltip);
+Chart.register(CategoryScale, Filler, Legend, LineController, LineElement, LinearScale, PointElement, Tooltip);
 
 const iconSet = {
   Activity,
@@ -99,6 +100,7 @@ const pageTitles = {
   workflows: 'Workflows',
   ...pluginPageTitles,
   'plugins/calendar/settings': 'Calendar settings',
+  'plugins/health/settings': 'Health settings',
   'design-system': 'Design system',
 };
 const pageRoot = document.querySelector('#page-root');
@@ -107,6 +109,8 @@ const themeToggle = document.querySelector('.theme-toggle');
 let currentPage = '';
 let sidebarCollapsed = localStorage.getItem('local-dashboard-sidebar-collapsed') === 'true';
 let activeCharts = [];
+let healthPageData = null;
+let healthSettings = { weightUnit: 'lb', dateRange: '18m' };
 let integrationRecords = [];
 let integrationSearch = '';
 let integrationCategory = '';
@@ -319,6 +323,15 @@ function renderPage(requestedPage) {
   }
   const calendarSettingsForm = pageRoot.querySelector('#calendar-settings-form');
   if (calendarSettingsForm) bindCalendarSettingsForm(calendarSettingsForm);
+  const healthSettingsForm = pageRoot.querySelector('#health-settings-form');
+  if (healthSettingsForm) bindHealthSettingsForm(healthSettingsForm);
+  pageRoot.querySelectorAll('[data-health-range]').forEach((button) => button.addEventListener('click', () => {
+    if (!healthPageData) return;
+    healthSettings = { ...healthSettings, dateRange: button.dataset.healthRange };
+    pageRoot.querySelectorAll('[data-health-range]').forEach((item) => { item.classList.toggle('active', item === button); item.setAttribute('aria-pressed', String(item === button)); });
+    destroyCharts();
+    renderHealth(healthPageData);
+  }));
 
   void hydratePage(pageId);
 }
@@ -390,7 +403,7 @@ function normalizeCalendarSettings(settings) {
 }
 
 async function hydratePage(pageId) {
-  if (pageId === 'plugins/calendar/settings') return;
+  if (pageId === 'plugins/calendar/settings' || pageId === 'plugins/health/settings') return;
   if (!['plugins', 'integrations', 'workflows', 'calendar', 'todos', 'health'].includes(pageId)) return;
   try {
     const data = await window.dashboard.getPageData(pageId);
@@ -408,7 +421,7 @@ async function hydratePage(pageId) {
     }
     if (pageId === 'integrations') renderIntegrations(data.integrations || []);
     if (pageId === 'todos') renderTodos(data.tasks || []);
-    if (pageId === 'health') renderHealth(data);
+    if (pageId === 'health') { healthPageData = data; healthSettings = normalizeHealthSettings(data.settings); renderHealth(data); }
   } catch (error) {
     console.error(`Could not load ${pageId} data`, error);
     if (pageId === 'integrations' && currentPage === pageId) {
@@ -1220,134 +1233,309 @@ function localDateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function renderHealth(data) {
-  const sleep = data.sleep || [];
-  const weight = data.weight || [];
-  const values = sleep.slice(-7).map((row) => row.durationHours);
-  const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
-  pageRoot.querySelector('.health-metric-value').textContent = `${Math.floor(average)}h ${String(Math.round((average % 1) * 60)).padStart(2, '0')}m`;
-  pageRoot.querySelectorAll('.health-metric-value')[1].innerHTML = `${weight.at(-1)?.kilograms.toFixed(1) ?? '—'} <small>kg</small>`;
-  renderHealthCharts(sleep, weight);
+function normalizeHealthSettings(settings = {}) {
+  settings ||= {};
+  return {
+    weightUnit: settings.weightUnit === 'kg' ? 'kg' : 'lb',
+    dateRange: ['3m', '6m', '18m', 'all'].includes(settings.dateRange) ? settings.dateRange : '18m',
+  };
 }
 
-function renderHealthCharts(sleepRecords, weightRecords) {
-  const chartLabels = sleepRecords.map((row) => new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(row.occurred_at)));
-  const themeColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const gridColor = themeColor('--chart-grid');
-  const tickColor = themeColor('--chart-tick');
-  const baseOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: { intersect: false, mode: 'index' },
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: themeColor('--chart-tooltip'),
-        padding: 10,
-        cornerRadius: 8,
-        titleFont: { family: 'Inter, system-ui, sans-serif', size: 10, weight: '600' },
-        bodyFont: { family: 'Inter, system-ui, sans-serif', size: 10 },
+function bindHealthSettingsForm(form) {
+  const status = pageRoot.querySelector('#health-settings-status');
+  const weightUnit = form.elements.weightUnit;
+  const dateRange = form.elements.dateRange;
+  void window.dashboard.getPluginSetting('health', 'dashboard').then((saved) => {
+    if (currentPage !== 'plugins/health/settings') return;
+    const settings = normalizeHealthSettings(saved);
+    weightUnit.value = settings.weightUnit;
+    dateRange.value = settings.dateRange;
+  }).catch((error) => { if (status) status.textContent = `Could not load settings: ${error.message}`; });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const settings = normalizeHealthSettings({ weightUnit: weightUnit.value, dateRange: dateRange.value });
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      await window.dashboard.setPluginSetting('health', 'dashboard', settings);
+      healthSettings = settings;
+      if (status) status.textContent = 'Settings saved on this device.';
+    } catch (error) { if (status) status.textContent = `Could not save settings: ${error.message}`; }
+    finally { button.disabled = false; }
+  });
+}
+
+function metricDate(record) {
+  const date = new Date(record.occurred_at);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function sortedMetrics(records = []) {
+  return records.map((record) => ({ ...record, _date: metricDate(record) }))
+    .filter((record) => record._date)
+    .sort((a, b) => a._date - b._date);
+}
+
+function healthDateLabel(date, includeYear = false) {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', ...(includeYear ? { year: '2-digit' } : {}) }).format(date);
+}
+
+function healthRangeStart(range, newestDate = new Date()) {
+  if (range === 'all') return null;
+  const date = new Date(newestDate);
+  date.setMonth(date.getMonth() - ({ '3m': 3, '6m': 6, '18m': 18 }[range] || 18));
+  return date;
+}
+
+function inHealthRange(records, range) {
+  if (!records.length) return [];
+  const from = healthRangeStart(range, records.at(-1)._date);
+  return from ? records.filter((record) => record._date >= from) : records;
+}
+
+function rollingAverage(records, readValue, dayWindow = 28, minimumSamples = 2) {
+  return records.map((record, index) => {
+    const from = record._date.getTime() - dayWindow * 86400000;
+    const values = records.slice(0, index + 1)
+      .filter((item) => item._date.getTime() >= from)
+      .map(readValue).filter(Number.isFinite);
+    return values.length >= minimumSamples ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  });
+}
+
+function clockHour(date) { return date.getHours() + date.getMinutes() / 60; }
+function overnightClockHour(hour) { return hour < 12 ? hour + 24 : hour; }
+function formatHealthClock(value) {
+  const hour = ((Math.round(value) % 24) + 24) % 24;
+  return `${hour % 12 || 12} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+function formatHealthDuration(value) {
+  if (!Number.isFinite(value)) return '—';
+  const minutes = Math.round(value * 60);
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+function healthChartBase() {
+  const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return {
+    token,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index', axis: 'x' },
+      plugins: {
+        legend: { display: true, position: 'top', align: 'start', labels: { color: token('--chart-tick'), usePointStyle: true, pointStyle: 'circle', boxWidth: 7, boxHeight: 7, padding: 14, font: { family: 'Inter, system-ui, sans-serif', size: 11 } } },
+        tooltip: { backgroundColor: token('--chart-tooltip'), padding: 10, cornerRadius: 7, titleFont: { family: 'Inter, system-ui, sans-serif', size: 11, weight: '600' }, bodyFont: { family: 'Inter, system-ui, sans-serif', size: 10 } },
       },
-    },
-    scales: {
-      x: {
-        grid: { display: false },
-        border: { display: false },
-        ticks: { color: tickColor, maxTicksLimit: 7, font: { family: 'Inter, system-ui, sans-serif', size: 9 } },
-      },
-      y: {
-        grid: { color: gridColor },
-        border: { display: false, dash: [3, 4] },
-        ticks: { color: tickColor, font: { family: 'Inter, system-ui, sans-serif', size: 9 }, padding: 8 },
+      scales: {
+        x: { grid: { display: false }, border: { display: false }, ticks: { color: token('--chart-tick'), maxTicksLimit: 9, maxRotation: 0, autoSkip: true, font: { family: 'Inter, system-ui, sans-serif', size: 10 }, callback(value) { return this.getLabelForValue(value); } } },
+        y: { grid: { color: token('--chart-grid') }, border: { display: false }, ticks: { color: token('--chart-tick'), padding: 7, font: { family: 'Inter, system-ui, sans-serif', size: 10 } } },
       },
     },
   };
+}
 
-  const sleepCanvas = pageRoot.querySelector('#sleep-chart');
-  if (sleepCanvas) {
-    activeCharts.push(new Chart(sleepCanvas, {
-      type: 'line',
-      data: {
-        labels: chartLabels,
-        datasets: [{
-          label: 'Sleep duration',
-          data: sleepRecords.map((row) => row.durationHours),
-          borderColor: themeColor('--color-primary'),
-          backgroundColor: themeColor('--chart-primary-fill'),
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          pointBackgroundColor: themeColor('--color-primary'),
-          pointBorderColor: themeColor('--color-surface'),
-          pointBorderWidth: 1.5,
-          fill: true,
-          tension: .36,
-        }],
-      },
-      options: {
-        ...baseOptions,
-        scales: {
-          ...baseOptions.scales,
-          y: {
-            ...baseOptions.scales.y,
-            min: 5,
-            max: 10,
-            ticks: { ...baseOptions.scales.y.ticks, stepSize: 1, callback: (value) => `${value}h` },
-          },
-        },
-        plugins: {
-          ...baseOptions.plugins,
-          tooltip: {
-            ...baseOptions.plugins.tooltip,
-            callbacks: { label: (context) => ` ${context.parsed.y.toFixed(1)} hours` },
-          },
-        },
-      },
-    }));
+function renderHealth(data) {
+  const sleepAll = sortedMetrics(data.sleep || []);
+  const weightAll = sortedMetrics(data.weight || []);
+  const sleep = inHealthRange(sleepAll, healthSettings.dateRange);
+  const weight = inHealthRange(weightAll, healthSettings.dateRange);
+  const unit = healthSettings.weightUnit;
+  const toDisplayWeight = (kilograms) => unit === 'lb' ? kilograms * 2.2046226218 : kilograms;
+  const latestWeight = weightAll.at(-1);
+  const previousWeight = weightAll[0];
+  const latestBodyFat = [...weightAll].reverse().find((record) => Number.isFinite(Number(record.bodyFatPercent)) && record.bodyFatPercent !== null);
+  const recentSleep = sleepAll.slice(-7);
+  const averageSleep = recentSleep.length ? recentSleep.reduce((sum, record) => sum + Number(record.durationHours || 0), 0) / recentSleep.length : null;
+  const efficiencies = recentSleep.map((record) => Number(record.efficiency ?? record.sleepEfficiency)).filter(Number.isFinite);
+  const averageEfficiency = efficiencies.length ? efficiencies.reduce((sum, value) => sum + value, 0) / efficiencies.length : null;
+  const weightValue = pageRoot.querySelector('#health-weight-value');
+  const fatValue = pageRoot.querySelector('#health-fat-value');
+  if (weightValue) weightValue.textContent = latestWeight ? `${toDisplayWeight(Number(latestWeight.kilograms)).toFixed(1)} ${unit}` : '—';
+  if (fatValue) fatValue.textContent = latestBodyFat ? `${Number(latestBodyFat.bodyFatPercent).toFixed(1)}%` : '—';
+  const weightDelta = latestWeight && previousWeight ? toDisplayWeight(Number(latestWeight.kilograms) - Number(previousWeight.kilograms)) : null;
+  pageRoot.querySelector('#health-weight-note').textContent = latestWeight
+    ? `${healthDateLabel(latestWeight._date)} · ${weightAll.length} readings · ${weightDelta == null ? 'baseline' : `${weightDelta > 0 ? '+' : ''}${weightDelta.toFixed(1)} ${unit} since ${healthDateLabel(previousWeight._date)}`}`
+    : 'No weight measurements yet';
+  pageRoot.querySelector('#health-fat-note').textContent = latestBodyFat ? `Latest body-fat reading · ${healthDateLabel(latestBodyFat._date)}` : 'No body-fat readings yet';
+  pageRoot.querySelector('#health-sleep-value').textContent = formatHealthDuration(averageSleep);
+  pageRoot.querySelector('#health-sleep-note').textContent = recentSleep.length ? `Average of last ${recentSleep.length} recorded nights` : 'No sleep records yet';
+  pageRoot.querySelector('#health-efficiency-value').textContent = averageEfficiency == null ? '—' : `${averageEfficiency.toFixed(1)}%`;
+  pageRoot.querySelector('#health-efficiency-note').textContent = efficiencies.length ? `Average of ${efficiencies.length} recent efficiency readings` : 'No efficiency data in this source';
+  const rangeCaption = pageRoot.querySelector('#health-range-caption');
+  if (rangeCaption) {
+    const newest = [...weightAll, ...sleepAll].at(-1)?._date || new Date();
+    const from = healthRangeStart(healthSettings.dateRange, newest);
+    rangeCaption.textContent = from ? `${healthDateLabel(from)} – ${healthDateLabel(newest, true)}` : 'All recorded history';
   }
+  const selectedRange = healthSettings.dateRange;
+  pageRoot.querySelectorAll('[data-health-range]').forEach((button) => {
+    const active = button.dataset.healthRange === selectedRange;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  const weightCount = pageRoot.querySelector('.health-story-weight .health-chart-source');
+  const sleepCount = pageRoot.querySelector('#sleep-timing-chart')?.closest('.health-story')?.querySelector('.health-chart-source');
+  const sleepQualityCount = pageRoot.querySelector('#sleep-quality-chart')?.closest('.health-story')?.querySelector('.health-chart-source');
+  if (weightCount) weightCount.textContent = `${weight.length} measurements${weight[0] ? ` · since ${healthDateLabel(weight[0]._date)}` : ''}`;
+  const sleepSource = `${sleep.length} logged nights${sleep.length ? ` · ${healthDateLabel(sleep[0]._date, true)} – ${healthDateLabel(sleep.at(-1)._date, true)}` : ''}`;
+  if (sleepCount) sleepCount.textContent = sleepSource;
+  if (sleepQualityCount) sleepQualityCount.textContent = sleepSource;
+  renderHealthCharts(sleep, weight, toDisplayWeight, unit);
+}
 
+function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) {
+  pageRoot.querySelectorAll('.health-chart-container canvas').forEach((canvas) => { canvas.hidden = false; canvas.parentElement.querySelector('.health-chart-empty')?.remove(); });
+  const { options, token } = healthChartBase();
+  const grid = token('--chart-grid');
+  const tick = token('--chart-tick');
+  const surface = token('--color-surface');
+  const green = token('--color-primary');
+  const blue = token('--chart-weight');
+  const red = '#df6d58';
+  const orange = '#d38b39';
+  const dateLabels = (records) => records.map((record) => healthDateLabel(record._date, true));
+  const sleepTimeline = (records, values) => {
+    if (!records.length) return { labels: [], data: [] };
+    const first = new Date(records[0]._date);
+    const last = new Date(records.at(-1)._date);
+    first.setHours(0, 0, 0, 0);
+    last.setHours(0, 0, 0, 0);
+    const byDay = new Map(records.map((record, index) => [localDateKey(record._date), values[index]]));
+    const labels = [];
+    const data = [];
+    for (const day = new Date(first); day <= last; day.setDate(day.getDate() + 1)) {
+      labels.push(healthDateLabel(day));
+      data.push(byDay.has(localDateKey(day)) ? byDay.get(localDateKey(day)) : null);
+    }
+    return { labels, data };
+  };
   const weightCanvas = pageRoot.querySelector('#weight-chart');
-  if (weightCanvas) {
+  if (weightCanvas && weightRecords.length) {
+    const labels = dateLabels(weightRecords);
+    const kilograms = (record) => Number(record.kilograms);
+    const bodyFat = (record) => record.bodyFatPercent == null ? NaN : Number(record.bodyFatPercent);
+    const weightData = weightRecords.map(kilograms);
+    const fatData = weightRecords.map(bodyFat);
+    const avgWeight = rollingAverage(weightRecords, (record) => toDisplayWeight(kilograms(record)));
+    const avgFat = rollingAverage(weightRecords, bodyFat);
+    const datasets = [
+      { label: `Weight (${unit})`, data: weightData.map(toDisplayWeight), yAxisID: 'y', showLine: false, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: blue, pointBorderColor: surface, pointBorderWidth: 1.25 },
+      { label: '28-day weight trend', data: avgWeight, yAxisID: 'y', borderColor: blue, borderWidth: 2.2, pointRadius: 0, tension: 0.28, spanGaps: false },
+      { label: 'Body fat (%)', data: fatData, yAxisID: 'y1', showLine: false, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: red, pointBorderColor: surface, pointBorderWidth: 1.25 },
+      { label: '28-day body-fat trend', data: avgFat, yAxisID: 'y1', borderColor: red, borderWidth: 2.2, borderDash: [5, 4], pointRadius: 0, tension: 0.28, spanGaps: false },
+    ];
     activeCharts.push(new Chart(weightCanvas, {
-      type: 'line',
-      data: {
-        labels: chartLabels,
-        datasets: [{
-          label: 'Weight',
-          data: weightRecords.map((row) => row.kilograms),
-          borderColor: themeColor('--chart-weight'),
-          backgroundColor: themeColor('--chart-weight-fill'),
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHoverRadius: 4,
-          pointBackgroundColor: themeColor('--chart-weight'),
-          pointBorderColor: themeColor('--color-surface'),
-          pointBorderWidth: 1.5,
-          fill: true,
-          tension: .36,
-        }],
-      },
-      options: {
-        ...baseOptions,
-        scales: {
-          ...baseOptions.scales,
-          y: {
-            ...baseOptions.scales.y,
-            min: 70,
-            max: 75,
-            ticks: { ...baseOptions.scales.y.ticks, stepSize: 1, callback: (value) => `${value} kg` },
-          },
-        },
-        plugins: {
-          ...baseOptions.plugins,
-          tooltip: {
-            ...baseOptions.plugins.tooltip,
-            callbacks: { label: (context) => ` ${context.parsed.y.toFixed(1)} kg` },
-          },
-        },
-      },
+      type: 'line', data: { labels, datasets },
+      options: { ...options, scales: {
+        ...options.scales,
+        y: { ...options.scales.y, title: { display: true, text: `Weight (${unit})`, color: blue, font: { size: 10, weight: '600' } }, ticks: { ...options.scales.y.ticks, color: blue } },
+        y1: { position: 'right', grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Body fat (%)', color: red, font: { size: 10, weight: '600' } }, ticks: { color: red, padding: 7, font: { size: 9 }, callback: (value) => `${value}%` } },
+      }, plugins: { ...options.plugins, tooltip: { ...options.plugins.tooltip, callbacks: {
+        label(context) { const value = context.parsed.y; return ` ${context.dataset.label.startsWith('Weight') ? `${value.toFixed(1)} ${unit}` : `${value.toFixed(1)}%`}`; },
+      } } } },
     }));
+  } else if (weightCanvas) {
+    showHealthChartEmpty(weightCanvas, 'No weight readings in this date range.');
   }
+
+  const compositionCanvas = pageRoot.querySelector('#composition-chart');
+  if (compositionCanvas && weightRecords.length > 1) {
+    const baseline = weightRecords.find((record) => Number.isFinite(Number(record.kilograms)) && Number.isFinite(Number(record.bodyFatPercent)));
+    if (baseline) {
+      const baseWeight = Number(baseline.kilograms);
+      const baseFatMass = baseWeight * Number(baseline.bodyFatPercent) / 100;
+      const baseLeanMass = baseWeight - baseFatMass;
+      const fatChange = weightRecords.map((record) => {
+        if (!Number.isFinite(Number(record.bodyFatPercent))) return null;
+        const mass = Number(record.kilograms) * Number(record.bodyFatPercent) / 100;
+        return ((mass - baseFatMass) / baseFatMass) * 100;
+      });
+      const leanChange = weightRecords.map((record) => {
+        if (!Number.isFinite(Number(record.bodyFatPercent))) return null;
+        const mass = Number(record.kilograms) * (1 - Number(record.bodyFatPercent) / 100);
+        return ((mass - baseLeanMass) / baseLeanMass) * 100;
+      });
+      const compositionSource = pageRoot.querySelector('#composition-chart')?.closest('.health-story')?.querySelector('.health-chart-source');
+      if (compositionSource) compositionSource.textContent = `Estimated · baseline ${healthDateLabel(baseline._date, true)}`;
+      activeCharts.push(new Chart(compositionCanvas, {
+        type: 'line', data: { labels: dateLabels(weightRecords), datasets: [
+          { label: 'Estimated fat mass change', data: fatChange, borderColor: red, backgroundColor: 'rgba(223,109,88,.09)', fill: false, borderWidth: 1.8, pointRadius: 1.8, pointHoverRadius: 4, tension: 0.24, spanGaps: false },
+          { label: 'Estimated lean mass change', data: leanChange, borderColor: green, backgroundColor: 'rgba(57,117,90,.08)', fill: false, borderWidth: 1.8, pointRadius: 1.8, pointHoverRadius: 4, tension: 0.24, spanGaps: false },
+        ] },
+        options: { ...options, plugins: { ...options.plugins, tooltip: { ...options.plugins.tooltip, callbacks: { label: (context) => ` ${context.dataset.label}: ${context.parsed.y.toFixed(1)}%` } } }, scales: { ...options.scales, y: { ...options.scales.y, ticks: { ...options.scales.y.ticks, callback: (value) => `${value}%` } } } },
+      }));
+    } else showHealthChartEmpty(compositionCanvas, 'Body-fat measurements are needed to estimate fat and lean mass.');
+  } else if (compositionCanvas) showHealthChartEmpty(compositionCanvas, 'Add at least two weight and body-fat readings to see composition change.');
+
+  const timingCanvas = pageRoot.querySelector('#sleep-timing-chart');
+  if (timingCanvas && sleepRecords.length) {
+    const bedtime = [];
+    const wake = [];
+    for (const record of sleepRecords) {
+      const start = metricDate(record);
+      const duration = Number(record.durationHours);
+      if (Number.isFinite(Number(record.bedtimeHour))) {
+        const value = Number(record.bedtimeHour);
+        bedtime.push(overnightClockHour(value));
+        const wakeHour = Number(record.wakeHour);
+        wake.push(Number.isFinite(wakeHour) ? overnightClockHour(wakeHour < value ? wakeHour + 24 : wakeHour) : overnightClockHour(value) + duration);
+      } else if (start && Number.isFinite(duration)) {
+        const startHour = clockHour(start);
+        bedtime.push(overnightClockHour(startHour));
+        wake.push(overnightClockHour(startHour) + duration);
+      } else { bedtime.push(null); wake.push(null); }
+    }
+    const bedtimeSeries = sleepTimeline(sleepRecords, bedtime);
+    const wakeSeries = sleepTimeline(sleepRecords, wake);
+    activeCharts.push(new Chart(timingCanvas, {
+      type: 'line', data: { labels: bedtimeSeries.labels, datasets: [
+        { label: 'Bedtime', data: bedtimeSeries.data, borderColor: blue, backgroundColor: 'rgba(83,111,161,.16)', borderWidth: 2, pointRadius: 3, pointHoverRadius: 4, tension: 0.18, spanGaps: false, fill: { target: '+1' } },
+        { label: 'Wake time', data: wakeSeries.data, borderColor: orange, backgroundColor: 'rgba(211,139,57,.14)', borderWidth: 2, pointRadius: 3, pointHoverRadius: 4, tension: 0.18, spanGaps: false },
+      ] },
+      options: { ...options, scales: { ...options.scales, y: { min: 21, max: 34, grid: { color: grid }, ticks: { color: tick, stepSize: 2, callback: formatHealthClock } } }, plugins: { ...options.plugins, tooltip: { ...options.plugins.tooltip, callbacks: { label: (context) => ` ${context.dataset.label}: ${formatHealthClock(context.parsed.y)}` } } } },
+    }));
+  } else if (timingCanvas) showHealthChartEmpty(timingCanvas, 'No sleep timing data in this date range.');
+
+  const qualityCanvas = pageRoot.querySelector('#sleep-quality-chart');
+  if (qualityCanvas && sleepRecords.length) {
+    const duration = sleepRecords.map((record) => Number.isFinite(Number(record.durationHours)) ? Number(record.durationHours) : null);
+    const efficiency = sleepRecords.map((record) => {
+      const value = Number(record.efficiency ?? record.sleepEfficiency);
+      return Number.isFinite(value) ? value : null;
+    });
+    const avgDuration = rollingAverage(sleepRecords, (record) => Number(record.durationHours), 7, 2);
+    const avgEfficiency = rollingAverage(sleepRecords, (record) => Number(record.efficiency ?? record.sleepEfficiency), 7, 2);
+    const durationSeries = sleepTimeline(sleepRecords, duration);
+    const avgDurationSeries = sleepTimeline(sleepRecords, avgDuration);
+    const efficiencySeries = sleepTimeline(sleepRecords, efficiency);
+    const avgEfficiencySeries = sleepTimeline(sleepRecords, avgEfficiency);
+    const referenceSeries = sleepTimeline(sleepRecords, sleepRecords.map(() => 7));
+    const efficiencyReferenceSeries = sleepTimeline(sleepRecords, sleepRecords.map(() => 95));
+    activeCharts.push(new Chart(qualityCanvas, {
+      type: 'line', data: { labels: durationSeries.labels, datasets: [
+        { label: 'Nightly duration', data: durationSeries.data, yAxisID: 'y', showLine: false, pointRadius: 3.2, pointHoverRadius: 4, pointBackgroundColor: blue, pointBorderColor: surface, pointBorderWidth: 1 },
+        { label: '7-night duration average', data: avgDurationSeries.data, yAxisID: 'y', borderColor: blue, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .25, spanGaps: false },
+        { label: 'Nightly efficiency', data: efficiencySeries.data, yAxisID: 'y1', showLine: false, pointRadius: 3.2, pointHoverRadius: 4, pointBackgroundColor: green, pointBorderColor: surface, pointBorderWidth: 1 },
+        { label: '7-night efficiency average', data: avgEfficiencySeries.data, yAxisID: 'y1', borderColor: green, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .25, spanGaps: false },
+        { label: '7 h reference', data: referenceSeries.data.map((value) => value == null ? null : 7), yAxisID: 'y', borderColor: 'rgba(83,111,161,.58)', borderDash: [2, 4], borderWidth: 1.2, pointRadius: 0, spanGaps: true },
+        { label: '95% reference', data: efficiencyReferenceSeries.data.map((value) => value == null ? null : 95), yAxisID: 'y1', borderColor: 'rgba(57,117,90,.58)', borderDash: [2, 4], borderWidth: 1.2, pointRadius: 0, spanGaps: true },
+      ] },
+      options: { ...options, scales: {
+        ...options.scales,
+        y: { ...options.scales.y, min: 3, max: 10, ticks: { ...options.scales.y.ticks, stepSize: 1, callback: (value) => `${value} h` } },
+        y1: { position: 'right', min: 70, max: 100, grid: { drawOnChartArea: false }, border: { display: false }, ticks: { color: green, font: { size: 9 }, callback: (value) => `${value}%` } },
+      }, plugins: { ...options.plugins, tooltip: { ...options.plugins.tooltip, callbacks: { label(context) { return ` ${context.dataset.label}: ${context.dataset.label.toLowerCase().includes('efficiency') ? `${context.parsed.y.toFixed(1)}%` : `${context.parsed.y.toFixed(1)} h`}`; } } } } },
+    }));
+  } else if (qualityCanvas) showHealthChartEmpty(qualityCanvas, 'No sleep duration data in this date range.');
+}
+
+function showHealthChartEmpty(canvas, message) {
+  const container = canvas.parentElement;
+  canvas.hidden = true;
+  let empty = container.querySelector('.health-chart-empty');
+  if (!empty) { empty = document.createElement('p'); empty.className = 'health-chart-empty'; container.append(empty); }
+  empty.textContent = message;
 }
 
 renderIcons(document.querySelector('.sidebar'));

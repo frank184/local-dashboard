@@ -281,6 +281,70 @@ function seedBuiltIns(db) {
     db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-calendar-all-day-v1', '1')").run();
   }
 
+  const healthSeedVersion = db.prepare("SELECT value FROM app_meta WHERE key = 'starter-health-trends-v1'").get();
+  if (!healthSeedVersion) {
+    // Replace the original 14-day demo rows with a longer, deliberately irregular
+    // sample history. These are clearly marked as local sample data in the UI.
+    db.prepare(`DELETE FROM data_records WHERE source_plugin_id IS NULL AND (
+      id GLOB 'sleep-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' OR
+      id GLOB 'weight-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    )`).run();
+    const insertHealthSample = db.prepare(`INSERT OR IGNORE INTO data_records
+      (id, domain_id, record_type, contract_version, source_plugin_id, external_id, occurred_at, payload_json)
+      VALUES (?, 'personal-health', ?, 1, 'health', ?, ?, ?)`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weightGaps = [5, 8, 6, 11, 7, 9, 4, 13, 6, 10];
+    const weightDates = [];
+    let age = 0;
+    for (let index = 0; index < 70; index += 1) {
+      weightDates.push(new Date(today.getTime() - age * 86400000));
+      age += weightGaps[index % weightGaps.length];
+    }
+    weightDates.reverse();
+    weightDates.forEach((date, index) => {
+      const progress = index / (weightDates.length - 1);
+      const lossProgress = Math.min(progress / 0.7, 1);
+      const reboundProgress = Math.max(0, (progress - 0.86) / 0.14);
+      const kilograms = 104.3 - 15.2 * lossProgress + 3.0 * reboundProgress
+        + Math.sin(index * 1.71) * 0.75 + Math.cos(index * 0.57) * 0.38;
+      const bodyFatPercent = 31 - 11.6 * lossProgress + 1.6 * reboundProgress
+        + Math.sin(index * 1.31) * 0.8 + Math.cos(index * 0.43) * 0.35;
+      const day = localDayKey(date);
+      const payload = { kilograms: Number(kilograms.toFixed(2)), bodyFatPercent: Number(bodyFatPercent.toFixed(1)), sourceName: 'Local sample' };
+      insertHealthSample.run(`health-demo-weight-${day}`, 'health_weight', `sample-weight-${day}`, `${day}T08:00:00`, JSON.stringify(payload));
+    });
+
+    const sleepGaps = [1, 2, 1, 1, 3, 1, 2, 1, 2, 1, 4, 1];
+    const sleepDates = [];
+    age = 0;
+    for (let index = 0; index < 52; index += 1) {
+      sleepDates.push(new Date(today.getTime() - age * 86400000));
+      age += sleepGaps[index % sleepGaps.length];
+    }
+    sleepDates.reverse();
+    sleepDates.forEach((date, index) => {
+      const progress = index / (sleepDates.length - 1);
+      const scheduleProgress = Math.min(progress / 0.72, 1);
+      const reboundProgress = Math.max(0, (progress - 0.82) / 0.18);
+      const bedtimeHour = 3.2 - 1.9 * scheduleProgress + 0.35 * reboundProgress + Math.sin(index * 1.8) * 0.75;
+      const durationHours = 6.05 + 0.55 * progress + Math.sin(index * 2.4) * 0.75 + Math.cos(index * 0.7) * 0.35;
+      const wakeHour = ((bedtimeHour + durationHours) % 24 + 24) % 24;
+      const efficiency = Math.max(78, Math.min(98, 87 + 6 * progress + Math.sin(index * 1.37) * 5));
+      const day = localDayKey(date);
+      const payload = {
+        durationHours: Number(Math.max(4.5, Math.min(9, durationHours)).toFixed(2)),
+        bedtimeHour: Number((((bedtimeHour % 24) + 24) % 24).toFixed(2)),
+        wakeHour: Number(wakeHour.toFixed(2)),
+        efficiency: Number(efficiency.toFixed(1)),
+        qualityScore: Number(efficiency.toFixed(1)),
+        sourceName: 'Local sample',
+      };
+      insertHealthSample.run(`health-demo-sleep-${day}`, 'health_sleep', `sample-sleep-${day}`, `${day}T23:00:00`, JSON.stringify(payload));
+    });
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-health-trends-v1', '1')").run();
+  }
+
   if (seedVersion) return;
 
   const insertRecord = db.prepare(`INSERT OR IGNORE INTO data_records
@@ -308,15 +372,6 @@ function seedBuiltIns(db) {
   ];
   for (const [id, title, detail, category, dueAt, completed] of tasks) {
     add(`task-${id}`, 'personal-productivity', 'todo_tasks', 'todos', id, dueAt, { title, detail, category, completed });
-  }
-
-  const sleepHours = [6.8, 7.4, 7.9, 6.9, 7.7, 8.1, 7.2, 7.6, 6.7, 7.9, 8.2, 7.0, 7.8, 7.6];
-  const weights = [73.2, 73.0, 73.1, 72.9, 72.8, 73.0, 72.7, 72.8, 72.6, 72.7, 72.5, 72.6, 72.3, 72.4];
-  for (let index = 0; index < sleepHours.length; index += 1) {
-    const dayDate = new Date(); dayDate.setDate(dayDate.getDate() - (sleepHours.length - 1 - index));
-    const day = localDayKey(dayDate);
-    add(`sleep-${day}`, 'personal-health', 'health_sleep', null, `sleep-${day}`, `${day}T23:00:00`, { durationHours: sleepHours[index] });
-    add(`weight-${day}`, 'personal-health', 'health_weight', null, `weight-${day}`, `${day}T08:00:00`, { kilograms: weights[index] });
   }
 
   db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-data-v1', '1')").run();

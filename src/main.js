@@ -49,7 +49,7 @@ function registerIpcHandlers() {
       case 'todos': return { tasks: TodoTask.all().map((task) => task.toJSON()) };
       case 'health': {
         const metrics = HealthMetric.all().map((metric) => metric.toJSON());
-        return { sleep: metrics.filter((metric) => metric.record_type === 'health_sleep'), weight: metrics.filter((metric) => metric.record_type === 'health_weight') };
+        return { sleep: metrics.filter((metric) => metric.record_type === 'health_sleep'), weight: metrics.filter((metric) => metric.record_type === 'health_weight'), settings: getPluginSetting('health', 'dashboard') || { weightUnit: 'lb', dateRange: '18m' } };
       }
       default: return {};
     }

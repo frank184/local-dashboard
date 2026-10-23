@@ -1,0 +1,16 @@
+<section class="page-view plugin-settings-page" id="health-plugin-settings">
+  <a class="text-link plugin-settings-back" href="#plugins"><i data-lucide="arrow-left" class="icon" aria-hidden="true"></i> Plugins</a>
+  <div class="plugin-settings-heading">
+    <span class="plugin-app-icon"><i data-lucide="heart-pulse" class="icon" aria-hidden="true"></i></span>
+    <div><p class="eyebrow">PLUGIN SETTINGS</p><h1>Health</h1><p class="intro">Choose how health measurements appear in this workspace.</p></div>
+  </div>
+  <form id="health-settings-form" class="component-card plugin-settings-form">
+    <div class="section-heading"><h2>Display</h2><p>These preferences only affect the Health plugin view.</p></div>
+    <div class="health-settings-fields">
+      <label class="field">Weight unit<select name="weightUnit"><option value="lb">Pounds (lb)</option><option value="kg">Kilograms (kg)</option></select></label>
+      <label class="field">Default chart range<select name="dateRange"><option value="3m">3 months</option><option value="6m">6 months</option><option value="18m">18 months</option><option value="all">All available history</option></select></label>
+    </div>
+    <p class="dialog-copy">Weight conversions change the display only. Original measurements remain stored in their source units.</p>
+    <div class="plugin-settings-footer"><span id="health-settings-status" role="status"></span><button class="button button-primary" type="submit">Save settings</button></div>
+  </form>
+</section>
