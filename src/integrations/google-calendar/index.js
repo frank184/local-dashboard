@@ -8,8 +8,9 @@ const TOKEN_API = 'https://oauth2.googleapis.com/token';
 const USERINFO_API = 'https://www.googleapis.com/oauth2/v2/userinfo';
 const base64url = (value) => value.toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
-async function connectGoogleCalendar({ clientId }) {
+async function connectGoogleCalendar({ clientId, clientSecret }) {
   if (!clientId?.trim()) throw new Error('Enter the Google OAuth client ID first.');
+  if (!clientSecret?.trim()) throw new Error('Set GOOGLE_CALENDAR_CLIENT_SECRET in your local .env file before connecting Google Calendar.');
   const state = base64url(crypto.randomBytes(24));
   const verifier = base64url(crypto.randomBytes(48));
   const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
@@ -41,7 +42,7 @@ async function connectGoogleCalendar({ clientId }) {
       catch (error) { clearTimeout(timeout); server.close(); reject(error); }
     });
   });
-  const body = new URLSearchParams({ client_id: clientId.trim(), code: callback.code, code_verifier: callback.verifier, grant_type: 'authorization_code', redirect_uri: callback.redirectUri });
+  const body = new URLSearchParams({ client_id: clientId.trim(), client_secret: clientSecret.trim(), code: callback.code, code_verifier: callback.verifier, grant_type: 'authorization_code', redirect_uri: callback.redirectUri });
   const response = await fetch(TOKEN_API, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   const token = await response.json();
   if (!response.ok) throw new Error(token.error_description || `Google token request failed (${response.status}).`);
@@ -50,9 +51,9 @@ async function connectGoogleCalendar({ clientId }) {
   return { token, email: userResponse.email || '', name: userResponse.name || '' };
 }
 
-async function refreshGoogleToken(clientId, token) {
+async function refreshGoogleToken(clientId, clientSecret, token) {
   if (!token.refresh_token) throw new Error('Google did not provide a refresh token. Remove this account and connect it again with consent.');
-  const body = new URLSearchParams({ client_id: clientId, refresh_token: token.refresh_token, grant_type: 'refresh_token' });
+  const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: token.refresh_token, grant_type: 'refresh_token' });
   const response = await fetch(TOKEN_API, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   const renewed = await response.json();
   if (!response.ok) throw new Error(renewed.error_description || `Google token refresh failed (${response.status}).`);
@@ -79,8 +80,8 @@ async function listGoogleCalendars(token) {
   return calendars;
 }
 
-async function syncGoogleCalendar({ clientId, token, integrationId, calendars, getSyncToken, saveSyncToken, importEvents, deleteEvents }) {
-  if (Date.now() >= token.expires_at) token = await refreshGoogleToken(clientId, token);
+async function syncGoogleCalendar({ clientId, clientSecret, token, integrationId, calendars, getSyncToken, saveSyncToken, importEvents, deleteEvents }) {
+  if (Date.now() >= token.expires_at) token = await refreshGoogleToken(clientId, clientSecret, token);
   const headers = { Authorization: `Bearer ${token.access_token}` };
   const request = async (url) => {
     const response = await fetch(url, { headers });
@@ -130,7 +131,7 @@ async function syncGoogleCalendar({ clientId, token, integrationId, calendars, g
       if (error.status === 410 && !fullSync) {
         deleteEvents(calendar.integration_id, calendar.external_calendar_id, null);
         saveSyncToken(calendar.id, null);
-        const fresh = await syncGoogleCalendar({ clientId, token, integrationId, calendars: [{ ...calendar, sync_token: null }], getSyncToken: () => null, saveSyncToken, importEvents, deleteEvents });
+        const fresh = await syncGoogleCalendar({ clientId, clientSecret, token, integrationId, calendars: [{ ...calendar, sync_token: null }], getSyncToken: () => null, saveSyncToken, importEvents, deleteEvents });
         recordCount += fresh.recordCount; token = fresh.token;
       } else throw error;
     }

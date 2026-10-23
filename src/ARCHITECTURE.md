@@ -43,7 +43,7 @@ The plugin and integration registries are build-time catalogs of bundled modules
 
 `ApplicationRecord` owns the single SQLite connection for the Electron main process. Feature models inherit the connection and lightweight `find`, `all`, `create`, `save`, `delete`, `validate`, and transaction behavior. Domain-specific queries and sync operations remain explicit model methods; flexible `data_records` continue using their generic record contract. No extra ORM dependency is required.
 
-The Google Calendar OAuth client ID is developer configuration supplied through `GOOGLE_CALENDAR_CLIENT_ID` (or a local, git-ignored `.env` file). It is public app identity, not a secret. Connected accounts retain the client ID used at authorization time so token refresh continues to work if the environment configuration later changes. Refresh tokens remain encrypted with Electron `safeStorage` in the matching integration record. See `.env.example` for the variable name.
+The Google Calendar Desktop OAuth client ID and client secret are developer configuration supplied through `GOOGLE_CALENDAR_CLIENT_ID` and `GOOGLE_CALENDAR_CLIENT_SECRET` (or a local, git-ignored `.env` file). Desktop clients are public clients and cannot keep the client secret confidential; it is sent to Google's token endpoint alongside PKCE. The secret must not be committed. Connected accounts retain the client ID used at authorization time so token refresh continues to work if the environment configuration later changes. Refresh tokens remain encrypted with Electron `safeStorage` in the matching integration record. See `.env.example` for the variable names.
 
 ## Calendar composition
 

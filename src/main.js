@@ -16,22 +16,24 @@ const { connectOutlookCalendar, listOutlookCalendars, syncOutlookCalendar } = re
 
 const activeWorkflowRuns = new Set();
 
-function loadGoogleClientIdFromLocalEnv() {
-  if (process.env.GOOGLE_CALENDAR_CLIENT_ID?.trim()) return;
+function loadGoogleOAuthSettingsFromLocalEnv() {
   try {
     const envFile = fs.readFileSync(path.join(__dirname, '../.env'), 'utf8');
-    const line = envFile.split(/\r?\n/).find((entry) => /^\s*(?:export\s+)?GOOGLE_CALENDAR_CLIENT_ID\s*=/.test(entry));
-    if (!line) return;
-    let value = line.replace(/^\s*(?:export\s+)?GOOGLE_CALENDAR_CLIENT_ID\s*=\s*/, '').trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
-    else value = value.replace(/\s+#.*$/, '').trim();
-    if (value) process.env.GOOGLE_CALENDAR_CLIENT_ID = value;
+    for (const key of ['GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET']) {
+      if (process.env[key]?.trim()) continue;
+      const line = envFile.split(/\r?\n/).find((entry) => new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`).test(entry));
+      if (!line) continue;
+      let value = line.replace(new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=\\s*`), '').trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+      else value = value.replace(/\s+#.*$/, '').trim();
+      if (value) process.env[key] = value;
+    }
   } catch (error) {
     if (error.code !== 'ENOENT') console.warn('Could not read local .env file:', error.message);
   }
 }
 
-loadGoogleClientIdFromLocalEnv();
+loadGoogleOAuthSettingsFromLocalEnv();
 
 // Electron does not currently recognize Hyprland/Omarchy as a Linux desktop
 // keyring environment. These sessions commonly expose GNOME Keyring through
@@ -95,10 +97,12 @@ function registerIpcHandlers() {
   ipcMain.handle('dashboard:connect-google-calendar', async (_event, { integrationId }) => {
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
     if (!clientId?.trim()) throw new Error('Set GOOGLE_CALENDAR_CLIENT_ID in your environment or local .env file before connecting Google Calendar.');
+    const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    if (!clientSecret?.trim()) throw new Error('Set GOOGLE_CALENDAR_CLIENT_SECRET in your local .env file. Download the Desktop OAuth client JSON from Google Cloud and copy its client_secret value.');
     if (!await safeStorage.isAsyncEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('OS credential storage is unavailable. Set up your desktop keyring before connecting Google Calendar.');
     const existing = integrationId ? Integration.find(integrationId) : null;
     if (integrationId && (!existing || existing.provider_id !== 'google-calendar')) throw new Error('Google Calendar connection not found.');
-    const connected = await connectGoogleCalendar({ clientId });
+    const connected = await connectGoogleCalendar({ clientId, clientSecret });
     if (!connected.token.refresh_token && existing?.secret_blob && JSON.parse(existing.config_json || '{}').clientId === clientId.trim()) {
       const previousToken = JSON.parse((await safeStorage.decryptStringAsync(Buffer.from(existing.secret_blob, 'base64'))).result);
       connected.token.refresh_token = previousToken.refresh_token;
@@ -373,7 +377,7 @@ async function executeGoogleCalendarWorkflow(workflowId) {
     const token = JSON.parse((await safeStorage.decryptStringAsync(Buffer.from(integration.secret_blob, 'base64'))).result);
     const calendars = selectedCalendars(integration.id);
     const result = await syncGoogleCalendar({
-      clientId: credentials.clientId, token, integrationId: integration.id, calendars,
+      clientId: credentials.clientId, clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET, token, integrationId: integration.id, calendars,
       getSyncToken: (calendarId) => calendars.find((calendar) => calendar.id === calendarId)?.sync_token,
       saveSyncToken: saveCalendarCursor,
       importEvents: (id, events) => upsertCalendarEvents(id, 'google-calendar-connector', events),
