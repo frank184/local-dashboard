@@ -73,11 +73,18 @@ function registerIpcHandlers() {
   ipcMain.handle('dashboard:install-plugin', (_event, id) => Plugin.installPlugin(id));
   ipcMain.handle('dashboard:add-integration', (_event, integration) => Integration.create({ provider_id: integration.providerId, display_name: integration.displayName, account_label: integration.accountLabel, plugin_id: integration.pluginId }).id);
   ipcMain.handle('dashboard:remove-integration', (_event, id) => Integration.removeIntegration(id));
-  ipcMain.handle('dashboard:update-integration', (_event, id, values) => Boolean(Integration.update(id, { display_name: values.displayName.trim(), account_label: (values.accountLabel || '').trim() })));
+  ipcMain.handle('dashboard:update-integration', (_event, id, values) => {
+    const integration = Integration.find(id);
+    if (!integration) return false;
+    const config = JSON.parse(integration.config_json || '{}');
+    const updated = Boolean(Integration.update(id, { display_name: values.displayName.trim(), account_label: (values.accountLabel || '').trim() || config.email || '' }));
+    if (updated && ['google-calendar', 'outlook-calendar'].includes(integration.provider_id)) refreshCalendarEventLabels(id);
+    return updated;
+  });
   ipcMain.handle('dashboard:set-integration-status', (_event, id, status) => Integration.setIntegrationStatus(id, status));
   ipcMain.handle('dashboard:set-workflow-enabled', (_event, id, enabled) => Workflow.setWorkflowEnabled(id, enabled));
   ipcMain.handle('dashboard:run-workflow', (_event, id) => executeWorkflow(id));
-  ipcMain.handle('dashboard:connect-google-calendar', async (_event, { accountLabel, integrationId }) => {
+  ipcMain.handle('dashboard:connect-google-calendar', async (_event, { integrationId }) => {
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
     if (!clientId?.trim()) throw new Error('Set GOOGLE_CALENDAR_CLIENT_ID in your environment or local .env file before connecting Google Calendar.');
     if (!await safeStorage.isAsyncEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('OS credential storage is unavailable. Set up your desktop keyring before connecting Google Calendar.');
@@ -89,18 +96,17 @@ function registerIpcHandlers() {
       connected.token.refresh_token = previousToken.refresh_token;
     }
     if (!connected.token.refresh_token) throw new Error('Google did not return an offline refresh token. Remove any old Local Dashboard grant from your Google Account and connect again.');
-    const id = integrationId || Integration.create({ provider_id: 'google-calendar', display_name: 'Google Calendar', account_label: accountLabel || connected.email, plugin_id: 'google-calendar-connector' }).id;
+    const id = integrationId || Integration.create({ provider_id: 'google-calendar', display_name: 'Google Calendar', account_label: connected.email || '', plugin_id: 'google-calendar-connector' }).id;
     try {
       const encrypted = (await safeStorage.encryptStringAsync(JSON.stringify(connected.token))).toString('base64');
-      Integration.update(id, { config_json: JSON.stringify({ clientId: clientId.trim(), email: connected.email }), secret_blob: encrypted, account_label: accountLabel || connected.email || 'Google account', status: 'connected' });
+      Integration.update(id, { config_json: JSON.stringify({ clientId: clientId.trim(), email: connected.email }), secret_blob: encrypted, account_label: existing?.account_label || connected.email || '', status: 'connected' });
       const calendars = await listGoogleCalendars(connected.token);
-      saveProviderCalendars(id, calendars.map((calendar) => ({ id: calendar.id, summary: calendar.summary || calendar.id, timeZone: calendar.timeZone, backgroundColor: calendar.backgroundColor })));
-      const workflowId = Integration.ensureCalendarSyncWorkflow(id);
-      const result = await executeGoogleCalendarWorkflow(workflowId);
-      return { id, workflowId, email: connected.email, calendarCount: calendars.length, ...result };
+      const savedCalendars = saveProviderCalendars(id, calendars.map((calendar) => ({ id: calendar.id, summary: calendar.summary || calendar.id, timeZone: calendar.timeZone, backgroundColor: calendar.backgroundColor })));
+      Integration.ensureCalendarSyncWorkflow(id);
+      return { id, email: connected.email, accountLabel: existing?.account_label || '', calendars: savedCalendars };
     } catch (error) {
       Integration.update(id, { status: 'error' });
-      throw new Error(`Google account connected, but initial calendar sync failed: ${error.message}`);
+      throw new Error(`Google account connected, but calendar setup could not be loaded: ${error.message}`);
     }
   });
   ipcMain.handle('dashboard:sync-google-calendar', async (_event, id) => {
@@ -108,7 +114,7 @@ function registerIpcHandlers() {
     if (!workflowId) throw new Error('No sync workflow is attached to this Google Calendar connection.');
     return executeGoogleCalendarWorkflow(workflowId);
   });
-  ipcMain.handle('dashboard:connect-outlook-calendar', async (_event, { clientId, accountLabel, integrationId }) => {
+  ipcMain.handle('dashboard:connect-outlook-calendar', async (_event, { clientId, integrationId }) => {
     if (!clientId?.trim()) throw new Error('Enter the Microsoft application (client) ID first.');
     if (!await safeStorage.isAsyncEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('OS credential storage is unavailable. Set up your desktop keyring before connecting Outlook.');
     const existing = integrationId ? Integration.find(integrationId) : null;
@@ -119,18 +125,17 @@ function registerIpcHandlers() {
       connected.token.refresh_token = previousToken.refresh_token;
     }
     if (!connected.token.refresh_token) throw new Error('Microsoft did not return a refresh token. Remove any old Local Dashboard consent and connect again.');
-    const id = integrationId || Integration.create({ provider_id: 'outlook-calendar', display_name: 'Outlook Calendar', account_label: accountLabel || connected.email, plugin_id: 'outlook-calendar-connector' }).id;
+    const id = integrationId || Integration.create({ provider_id: 'outlook-calendar', display_name: 'Outlook Calendar', account_label: connected.email || '', plugin_id: 'outlook-calendar-connector' }).id;
     try {
       const encrypted = (await safeStorage.encryptStringAsync(JSON.stringify(connected.token))).toString('base64');
-      Integration.update(id, { config_json: JSON.stringify({ clientId: clientId.trim(), email: connected.email }), secret_blob: encrypted, account_label: accountLabel || connected.email || 'Microsoft account', status: 'connected' });
+      Integration.update(id, { config_json: JSON.stringify({ clientId: clientId.trim(), email: connected.email }), secret_blob: encrypted, account_label: existing?.account_label || connected.email || '', status: 'connected' });
       const calendars = await listOutlookCalendars(connected.token);
-      saveProviderCalendars(id, calendars.map((calendar) => ({ id: calendar.id, summary: calendar.name || calendar.id, timeZone: null, backgroundColor: calendar.hexColor || null })));
-      const workflowId = Integration.ensureCalendarSyncWorkflow(id);
-      const result = await executeOutlookCalendarWorkflow(workflowId);
-      return { id, workflowId, email: connected.email, calendarCount: calendars.length, ...result };
+      const savedCalendars = saveProviderCalendars(id, calendars.map((calendar) => ({ id: calendar.id, summary: calendar.name || calendar.id, timeZone: null, backgroundColor: calendar.hexColor || null })));
+      Integration.ensureCalendarSyncWorkflow(id);
+      return { id, email: connected.email, accountLabel: existing?.account_label || '', calendars: savedCalendars };
     } catch (error) {
       updateIntegrationSyncResult(id, 'error');
-      throw new Error(`Outlook account connected, but initial calendar sync failed: ${error.message}`);
+      throw new Error(`Outlook account connected, but calendar setup could not be loaded: ${error.message}`);
     }
   });
   ipcMain.handle('dashboard:sync-outlook-calendar', async (_event, id) => {
@@ -139,9 +144,19 @@ function registerIpcHandlers() {
     return executeOutlookCalendarWorkflow(workflowId);
   });
   ipcMain.handle('dashboard:get-integration-calendars', (_event, id) => IntegrationCalendar.where({ integration_id: id }, {
-    select: ['id', 'integration_id', 'external_calendar_id', 'summary', 'timezone', 'color', 'selected', 'last_sync_at', 'sync_window_start', 'sync_window_end'], orderBy: 'summary',
+    select: ['id', 'integration_id', 'external_calendar_id', 'summary', 'display_label', 'timezone', 'color', 'selected', 'last_sync_at', 'sync_window_start', 'sync_window_end'], orderBy: 'summary',
   }).map((calendar) => calendar.toJSON()));
   ipcMain.handle('dashboard:set-integration-calendars', (_event, id, selections) => IntegrationCalendar.setIntegrationCalendarSelection(id, selections));
+  ipcMain.handle('dashboard:configure-calendar-integration', async (_event, id, { accountLabel, calendars }) => {
+    const integration = Integration.find(id);
+    if (!integration || !['google-calendar', 'outlook-calendar'].includes(integration.provider_id)) throw new Error('Calendar integration not found.');
+    const config = JSON.parse(integration.config_json || '{}');
+    Integration.update(id, { account_label: accountLabel?.trim() || config.email || '', status: 'connected' });
+    IntegrationCalendar.setIntegrationCalendarSelection(id, calendars);
+    refreshCalendarEventLabels(id);
+    const workflowId = Integration.ensureCalendarSyncWorkflow(id);
+    return integration.provider_id === 'google-calendar' ? executeGoogleCalendarWorkflow(workflowId) : executeOutlookCalendarWorkflow(workflowId);
+  });
   ipcMain.handle('dashboard:connect-fitbit', async (_event, { clientId, accountLabel, integrationId }) => {
     const existing = integrationId ? Integration.find(integrationId) : null;
     if (integrationId && (!existing || existing.provider_id !== 'fitbit')) throw new Error('Fitbit integration not found.');
@@ -195,8 +210,21 @@ function setPluginSetting(pluginId, stateKey, value) {
   return value;
 }
 
+function refreshCalendarEventLabels(integrationId) {
+  const calendars = ApplicationRecord.query(`SELECT c.external_calendar_id, COALESCE(NULLIF(c.display_label, ''), c.summary) AS calendar_name, i.plugin_id, i.account_label
+    FROM integration_calendars c JOIN integrations i ON i.id = c.integration_id WHERE i.id = ?`, integrationId);
+  for (const calendar of calendars) {
+    const sourceName = calendar.account_label ? `${calendar.calendar_name} · ${calendar.account_label}` : calendar.calendar_name;
+    const prefix = `calendar:${integrationId}:${calendar.external_calendar_id}:`;
+    ApplicationRecord.execute(`UPDATE data_records SET payload_json = json_set(payload_json,
+      '$.calendarName', ?, '$.sourceAccount', ?, '$.sourceName', ?)
+      WHERE integration_id = ? AND source_plugin_id = ? AND substr(external_id, 1, length(?)) = ?`,
+    calendar.calendar_name, calendar.account_label || '', sourceName, integrationId, calendar.plugin_id, prefix, prefix);
+  }
+}
+
 function selectedCalendars(integrationId) {
-  return ApplicationRecord.query(`SELECT c.id, c.integration_id, c.external_calendar_id, c.summary, c.timezone, c.color, c.sync_token, c.sync_window_start, c.sync_window_end, i.account_label
+  return ApplicationRecord.query(`SELECT c.id, c.integration_id, c.external_calendar_id, COALESCE(NULLIF(c.display_label, ''), c.summary) AS summary, c.timezone, c.color, c.sync_token, c.sync_window_start, c.sync_window_end, i.account_label
     FROM integration_calendars c JOIN integrations i ON i.id = c.integration_id
     WHERE c.integration_id = ? AND c.selected = 1 ORDER BY c.summary`, integrationId);
 }
@@ -232,7 +260,7 @@ function saveProviderCalendars(integrationId, calendars) {
     updateColumns: ['summary', 'timezone', 'color'],
   });
   return IntegrationCalendar.where({ integration_id: integrationId }, {
-    select: ['id', 'integration_id', 'external_calendar_id', 'summary', 'timezone', 'color', 'selected', 'last_sync_at', 'sync_window_start', 'sync_window_end'],
+    select: ['id', 'integration_id', 'external_calendar_id', 'summary', 'display_label', 'timezone', 'color', 'selected', 'last_sync_at', 'sync_window_start', 'sync_window_end'],
     orderBy: 'summary',
   }).map((calendar) => calendar.toJSON());
 }

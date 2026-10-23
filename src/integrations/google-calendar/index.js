@@ -113,7 +113,7 @@ async function syncGoogleCalendar({ clientId, token, integrationId, calendars, g
               title: event.summary || '(No title)', detail: event.description || '', description: event.description || '',
               location: event.location || '', startAt, endAt, allDay: Boolean(event.start?.date),
               calendarId: calendar.external_calendar_id, calendarName: calendar.summary, calendarColor: calendar.color || '',
-              source: 'Google Calendar', sourceAccount: calendar.account_label || '', sourceName: calendar.account_label ? `Google Calendar · ${calendar.account_label}` : 'Google Calendar',
+              source: 'Google Calendar', sourceAccount: calendar.account_label || '', sourceName: calendar.account_label ? `${calendar.summary} · ${calendar.account_label}` : calendar.summary || 'Google Calendar',
               providerEventId: event.id, iCalUID: event.iCalUID || '', htmlLink: event.htmlLink || '', status: event.status,
               transparency: event.transparency || 'opaque', timezone: event.start?.timeZone || calendar.timezone || '',
               color: 'blue', category: 'connected',

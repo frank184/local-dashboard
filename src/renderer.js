@@ -749,30 +749,62 @@ function updateIntegrationQuery(search, category) {
   renderIntegrations(integrationRecords);
 }
 
-async function showIntegrationCalendarsForm(integration) {
-  const calendars = await window.dashboard.getIntegrationCalendars(integration.id);
-  const form = document.createElement('form'); form.className = 'dialog-form';
-  const intro = document.createElement('p'); intro.className = 'dialog-copy field-wide'; intro.textContent = `Choose which calendars to sync from ${integration.account_label || integration.display_name}. Events are read from this account and cached locally.`; form.append(intro);
-  if (!calendars.length) { const empty = document.createElement('p'); empty.className = 'dialog-copy field-wide'; empty.textContent = 'No calendars were found for this account. Try syncing or reauthorizing it.'; form.append(empty); }
-  for (const calendar of calendars) {
-    const label = document.createElement('label'); label.className = 'field field-wide google-calendar-choice';
-    const input = document.createElement('input'); input.type = 'checkbox'; input.checked = Boolean(calendar.selected); input.dataset.calendarId = calendar.id;
-    const text = document.createElement('span'); text.textContent = calendar.summary;
-    label.append(input, text); form.append(label);
+function integrationAccountEmail(integration) {
+  try { return JSON.parse(integration.config_json || '{}').email || ''; } catch { return ''; }
+}
+
+function showCalendarIntegrationSetup(integration, calendars, afterConnect = false) {
+  const email = integrationAccountEmail(integration) || integration.email || '';
+  const form = document.createElement('form'); form.className = 'dialog-form integration-calendar-setup';
+  const intro = document.createElement('p'); intro.className = 'dialog-copy field-wide';
+  intro.textContent = 'Choose which calendars to sync. The account email and calendar names are kept as defaults; add optional labels to make them easier to recognize.';
+  form.append(intro);
+
+  const accountField = document.createElement('label'); accountField.className = 'field field-wide'; accountField.textContent = 'Account label';
+  const accountInput = document.createElement('input'); accountInput.name = 'accountLabel'; accountInput.maxLength = 80; accountInput.placeholder = email || integration.display_name;
+  const existingLabel = integration.account_label || '';
+  if (existingLabel && existingLabel !== email) accountInput.value = existingLabel;
+  accountField.append(accountInput); form.append(accountField);
+
+  const calendarsHeading = document.createElement('h3'); calendarsHeading.className = 'field-wide integration-calendar-setup-heading'; calendarsHeading.textContent = 'Calendars in this account'; form.append(calendarsHeading);
+  const calendarList = document.createElement('div'); calendarList.className = 'field-wide integration-calendar-setup-list';
+  if (!calendars.length) {
+    const empty = document.createElement('p'); empty.className = 'dialog-copy'; empty.textContent = 'No calendars were found for this account. Try syncing or reauthorizing it.'; calendarList.append(empty);
   }
+  for (const calendar of calendars) {
+    const row = document.createElement('div'); row.className = 'integration-calendar-label-row';
+    const choice = document.createElement('label'); choice.className = 'field google-calendar-choice';
+    const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = Boolean(calendar.selected); checkbox.dataset.calendarId = calendar.id;
+    const calendarName = document.createElement('span'); calendarName.textContent = calendar.summary;
+    choice.append(checkbox, calendarName);
+    const label = document.createElement('input'); label.className = 'integration-calendar-name-input'; label.type = 'text'; label.maxLength = 80;
+    label.value = calendar.display_label || ''; label.placeholder = calendar.summary; label.setAttribute('aria-label', `Optional label for ${calendar.summary}`);
+    row.append(choice, label); calendarList.append(row);
+  }
+  form.append(calendarList);
+
   const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
-  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = 'Save calendars';
-  const dialog = openDialog('Google Calendar sources', form, [cancel, save]); cancel.addEventListener('click', () => dialog.close()); save.addEventListener('click', () => form.requestSubmit());
+  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = 'Save & sync';
+  const dialog = openDialog(afterConnect ? 'Finish calendar setup' : 'Calendar settings', form, [cancel, save]);
+  cancel.addEventListener('click', () => dialog.close());
+  save.addEventListener('click', () => form.requestSubmit());
   form.addEventListener('submit', async (event) => {
     event.preventDefault(); save.disabled = true;
     try {
-      const selections = [...form.querySelectorAll('input[data-calendar-id]')].map((input) => ({ id: input.dataset.calendarId, selected: input.checked }));
-      await window.dashboard.setIntegrationCalendars(integration.id, selections);
-      if (integration.provider_id === 'google-calendar') await window.dashboard.syncGoogleCalendar(integration.id);
-      else await window.dashboard.syncOutlookCalendar(integration.id);
+      const calendarSettings = [...calendarList.querySelectorAll('.integration-calendar-label-row')].map((row) => ({
+        id: row.querySelector('[data-calendar-id]').dataset.calendarId,
+        selected: row.querySelector('[data-calendar-id]').checked,
+        displayLabel: row.querySelector('.integration-calendar-name-input').value,
+      }));
+      await window.dashboard.configureCalendarIntegration(integration.id, { accountLabel: accountInput.value, calendars: calendarSettings });
       dialog.close(); const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations);
     } catch (error) { window.alert(error.message); save.disabled = false; }
   });
+}
+
+async function showIntegrationCalendarsForm(integration) {
+  const calendars = await window.dashboard.getIntegrationCalendars(integration.id);
+  showCalendarIntegrationSetup(integration, calendars);
 }
 
 function integrationAction(label, iconName, action) {
@@ -805,15 +837,12 @@ function showIntegrationForm(provider) {
   if (provider.googleCalendar || provider.outlookCalendar) {
     const isOutlook = Boolean(provider.outlookCalendar);
     if (isOutlook) {
-      form.innerHTML = `<p class="dialog-copy field-wide">Register a Microsoft Entra application for accounts in any organization and personal Microsoft accounts. Add the <strong>Mobile and desktop applications</strong> platform with redirect URI <code>http://localhost</code>, enable public client flows, and grant delegated <code>User.Read</code> and <code>Calendars.Read</code>. Sign-in opens in your browser. Tokens stay in this device’s credential store.</p>
-        <label class="field field-wide">Microsoft application (client) ID<input name="clientId" required maxlength="180" autocomplete="off"></label>
-        <label class="field field-wide">Account label<input name="accountLabel" required maxlength="80" placeholder="Work Outlook"></label>`;
+      form.innerHTML = `<p class="dialog-copy field-wide">Register a Microsoft Entra application for accounts in any organization and personal Microsoft accounts. Add the <strong>Mobile and desktop applications</strong> platform with redirect URI <code>http://localhost</code>, enable public client flows, and grant delegated <code>User.Read</code> and <code>Calendars.Read</code>. Sign in first; you can label the account and choose its calendars next.</p>
+        <label class="field field-wide">Microsoft application (client) ID<input name="clientId" required maxlength="180" autocomplete="off"></label>`;
       if (provider.clientId) form.elements.clientId.value = provider.clientId;
     } else {
-    form.innerHTML = `<p class="dialog-copy field-wide">Google sign-in uses the app’s <code>GOOGLE_CALENDAR_CLIENT_ID</code> environment setting. Configure it in the local <code>.env</code> file, then restart the app. Sign-in opens in your browser and requests read-only calendar access. Tokens stay in this device’s credential store.</p>
-      <label class="field field-wide">Account label<input name="accountLabel" required maxlength="80" placeholder="Personal Gmail"></label>`;
+      form.innerHTML = `<p class="dialog-copy field-wide">Google sign-in uses the app’s <code>GOOGLE_CALENDAR_CLIENT_ID</code> setting and requests read-only calendar access. Sign in first; you can label the account and choose its calendars next. Tokens stay in this device’s credential store.</p>`;
     }
-    if (provider.accountLabel) form.elements.accountLabel.value = provider.accountLabel;
   } else if (provider.fitbit) {
     form.innerHTML = `<p class="dialog-copy field-wide">Fitbit’s legacy Web API is scheduled to shut down October 30, 2026. Create a Fitbit OAuth app, set its redirect URL to <code>http://127.0.0.1:53682/oauth/callback</code>, then enter its client ID. Sleep and weight access are requested. Tokens are kept in your desktop credential store.</p>
       <label class="field field-wide">Fitbit OAuth client ID<input name="clientId" required maxlength="120" autocomplete="off"></label>
@@ -831,9 +860,15 @@ function showIntegrationForm(provider) {
     event.preventDefault();
     save.disabled = true; save.textContent = provider.googleCalendar || provider.outlookCalendar || provider.fitbit ? 'Waiting for sign-in…' : 'Saving…';
     try {
-      const accountLabel = form.elements.accountLabel.value.trim();
-      if (provider.googleCalendar) await window.dashboard.connectGoogleCalendar({ accountLabel, integrationId: provider.reconnectId });
-      else if (provider.outlookCalendar) await window.dashboard.connectOutlookCalendar({ clientId: form.elements.clientId.value.trim(), accountLabel, integrationId: provider.reconnectId });
+      const accountLabel = form.elements.accountLabel?.value.trim() || '';
+      if (provider.googleCalendar || provider.outlookCalendar) {
+        const connection = provider.googleCalendar
+          ? await window.dashboard.connectGoogleCalendar({ integrationId: provider.reconnectId })
+          : await window.dashboard.connectOutlookCalendar({ clientId: form.elements.clientId.value.trim(), integrationId: provider.reconnectId });
+        dialog.close();
+        showCalendarIntegrationSetup({ id: connection.id, provider_id: provider.id, display_name: provider.name, account_label: connection.accountLabel, email: connection.email }, connection.calendars, true);
+        return;
+      }
       else if (provider.fitbit) await window.dashboard.connectFitbit({ clientId: form.elements.clientId.value.trim(), accountLabel, integrationId: provider.reconnectId });
       else await window.dashboard.addIntegration({ providerId: provider.id, displayName: provider.name, accountLabel, pluginId: provider.pluginId });
       dialog.close(); const { integrations } = await window.dashboard.getPageData('integrations'); renderIntegrations(integrations);

@@ -540,10 +540,17 @@ html {
 .integration-google-actions { display: inline-flex; gap: 5px; }
 .google-calendar-choice { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 9px !important; min-height: 34px; }
 .google-calendar-choice input { accent-color: var(--color-primary); }
+.integration-calendar-setup { grid-template-columns: minmax(0, 1fr); }
+.integration-calendar-setup-heading { margin: 4px 0 0; font-size: 12px; }
+.integration-calendar-setup-list { display: grid; gap: 6px; max-height: min(42vh, 360px); overflow: auto; padding-right: 3px; }
+.integration-calendar-label-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .9fr); align-items: center; gap: 12px; padding: 4px 0; }
+.integration-calendar-name-input { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text); background: var(--color-surface); font: inherit; font-size: 11px; }
+.integration-calendar-name-input:focus { outline: 3px solid rgba(83, 111, 161, .16); border-color: #90a3c5; }
 .google-calendar-choice span { color: var(--color-text); font-size: 12px; font-weight: 500; }
 .dialog-form > h3 { grid-column: 1 / -1; margin: 0; font-size: 16px; }
 .dialog-form > p { white-space: pre-line; }
-@media (max-width: 1000px) {
+@media (max-width: 600px) {
+  .integration-calendar-label-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .integration-google-actions { grid-column: 1 / -1; }
 }
 @media (min-width: 1400px) {

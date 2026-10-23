@@ -205,6 +205,13 @@ function migrate(db) {
     }
     db.exec('PRAGMA user_version = 10;');
   }
+
+  if (version < 11) db.exec(`
+    BEGIN;
+    ALTER TABLE integration_calendars ADD COLUMN display_label TEXT;
+    PRAGMA user_version = 11;
+    COMMIT;
+  `);
 }
 
 function seedBuiltIns(db) {
