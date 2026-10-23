@@ -701,7 +701,8 @@ function renderIntegrations(integrations) {
     }
     if (['google-calendar', 'outlook-calendar'].includes(integration.provider_id) && integration.has_credentials) {
       const reconnect = document.createElement('button'); reconnect.type = 'button'; reconnect.className = 'button button-secondary button-small'; reconnect.textContent = 'Reauthorize';
-      reconnect.addEventListener('click', () => showIntegrationForm({ ...provider, reconnectId: integration.id, accountLabel: integration.account_label, clientId: JSON.parse(integration.config_json || '{}').clientId || provider.clientId })); actions.append(reconnect);
+      const reconnectProvider = { ...provider, reconnectId: integration.id, accountLabel: integration.account_label, clientId: JSON.parse(integration.config_json || '{}').clientId || provider.clientId };
+      reconnect.addEventListener('click', () => integration.provider_id === 'google-calendar' ? connectGoogleCalendarDirect(reconnectProvider, reconnect) : showIntegrationForm(reconnectProvider)); actions.append(reconnect);
     }
     if (syncButton) actions.append(syncButton); actions.append(edit, toggle, remove);
     row.append(iconWrap, copy, status, actions); connectionList.append(row);
@@ -722,7 +723,7 @@ function renderIntegrations(integrations) {
     const availability = document.createElement('small'); availability.className = 'integration-provider-availability';
     availability.textContent = provider.unavailable ? 'Connector coming later' : provider.fitbit || provider.googleCalendar || provider.outlookCalendar ? `${accountCount} account${accountCount === 1 ? '' : 's'} connected` : 'Setup entry only';
     const connect = document.createElement('button'); connect.type = 'button'; connect.className = 'button button-secondary button-small'; connect.textContent = provider.unavailable ? 'Coming later' : provider.googleCalendar || provider.outlookCalendar ? 'Connect account' : accountCount ? 'Add another account' : provider.fitbit ? 'Connect Fitbit' : 'Add account'; connect.disabled = Boolean(provider.unavailable);
-    connect.addEventListener('click', () => showIntegrationForm(provider));
+    connect.addEventListener('click', () => provider.googleCalendar ? connectGoogleCalendarDirect(provider, connect) : showIntegrationForm(provider));
     card.append(head, name, description, availability, connect); providerGrid.append(card);
   }
   if (!matchingProviders.length) {
@@ -757,7 +758,7 @@ function showCalendarIntegrationSetup(integration, calendars, afterConnect = fal
   const email = integrationAccountEmail(integration) || integration.email || '';
   const form = document.createElement('form'); form.className = 'dialog-form integration-calendar-setup';
   const intro = document.createElement('p'); intro.className = 'dialog-copy field-wide';
-  intro.textContent = 'Choose which calendars to sync. The account email and calendar names are kept as defaults; add optional labels to make them easier to recognize.';
+  intro.textContent = `${afterConnect && email ? `Connected as ${email}. ` : ''}Choose which calendars to sync. The account email and calendar names are kept as defaults; add optional labels to make them easier to recognize.`;
   form.append(intro);
 
   const accountField = document.createElement('label'); accountField.className = 'field field-wide'; accountField.textContent = 'Account label';
@@ -786,7 +787,10 @@ function showCalendarIntegrationSetup(integration, calendars, afterConnect = fal
   const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
   const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = 'Save & sync';
   const dialog = openDialog(afterConnect ? 'Finish calendar setup' : 'Calendar settings', form, [cancel, save]);
-  cancel.addEventListener('click', () => dialog.close());
+  cancel.addEventListener('click', async () => {
+    dialog.close();
+    if (afterConnect) { const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations); }
+  });
   save.addEventListener('click', () => form.requestSubmit());
   form.addEventListener('submit', async (event) => {
     event.preventDefault(); save.disabled = true;
@@ -805,6 +809,30 @@ function showCalendarIntegrationSetup(integration, calendars, afterConnect = fal
 async function showIntegrationCalendarsForm(integration) {
   const calendars = await window.dashboard.getIntegrationCalendars(integration.id);
   showCalendarIntegrationSetup(integration, calendars);
+}
+
+async function connectGoogleCalendarDirect(provider, trigger) {
+  const originalText = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Waiting for Google…';
+  try {
+    const connection = await window.dashboard.connectGoogleCalendar({ integrationId: provider.reconnectId });
+    const { integrations } = await window.dashboard.getPageData('integrations');
+    renderIntegrations(integrations);
+    showCalendarIntegrationSetup({
+      id: connection.id,
+      provider_id: provider.id,
+      display_name: provider.name,
+      account_label: connection.accountLabel,
+      email: connection.email,
+    }, connection.calendars, true);
+  } catch (error) {
+    window.alert(error.message);
+    if (trigger.isConnected) {
+      trigger.disabled = false;
+      trigger.textContent = originalText;
+    }
+  }
 }
 
 function integrationAction(label, iconName, action) {
