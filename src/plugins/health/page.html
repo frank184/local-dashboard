@@ -31,9 +31,14 @@
 
   <section class="health-story health-story-weight">
     <header class="health-story-heading">
-      <div><h2>Weight &amp; body composition</h2><p>Measurements stay as points. The line smooths the last 28 days where readings overlap.</p></div>
+      <div><h2>Weight &amp; body composition</h2><p>Measurements stay as points. The line smooths the last 28 days where readings overlap. When both metrics are shown, their axes use separate scales.</p></div>
       <span class="health-chart-source">Local sample · measurements by date</span>
     </header>
+    <div class="health-mobile-metric-switch" role="group" aria-label="Weight chart metric">
+      <button type="button" data-health-weight-mode="weight" aria-pressed="true">Weight</button>
+      <button type="button" data-health-weight-mode="body-fat" aria-pressed="false">Body fat</button>
+      <button type="button" data-health-weight-mode="both" aria-pressed="false">Both</button>
+    </div>
     <div class="health-chart-container health-chart-wide"><canvas id="weight-chart" role="img" aria-label="Weight and body fat measurements over time, with a 28-day rolling trend"></canvas></div>
   </section>
 

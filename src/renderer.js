@@ -109,6 +109,7 @@ const themeToggle = document.querySelector('.theme-toggle');
 let currentPage = '';
 let sidebarCollapsed = localStorage.getItem('local-dashboard-sidebar-collapsed') === 'true';
 let activeCharts = [];
+let healthWeightModeCleanup = null;
 let healthPageData = null;
 let healthSettings = { weightUnit: 'lb', dateRange: '18m' };
 let integrationRecords = [];
@@ -154,7 +155,6 @@ function applySidebarState(persist = true) {
   if (!toggle) return;
   toggle.setAttribute('aria-expanded', String(!sidebarCollapsed));
   toggle.setAttribute('aria-label', `${sidebarCollapsed ? 'Expand' : 'Collapse'} navigation`);
-  toggle.title = `${sidebarCollapsed ? 'Expand' : 'Collapse'} navigation`;
   const icon = toggle.querySelector('[data-lucide]');
   if (icon) icon.dataset.lucide = sidebarCollapsed ? 'chevron-right' : 'chevron-left';
   const label = toggle.querySelector('span');
@@ -227,6 +227,8 @@ function updateActiveNavigation(pageId) {
 function destroyCharts() {
   for (const chart of activeCharts) chart.destroy();
   activeCharts = [];
+  healthWeightModeCleanup?.();
+  healthWeightModeCleanup = null;
 }
 
 function renderIcons(root) {
@@ -1270,6 +1272,12 @@ function metricDate(record) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function healthNumber(value) {
+  if (value == null || value === '') return NaN;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : NaN;
+}
+
 function sortedMetrics(records = []) {
   return records.map((record) => ({ ...record, _date: metricDate(record) }))
     .filter((record) => record._date)
@@ -1287,9 +1295,9 @@ function healthRangeStart(range, newestDate = new Date()) {
   return date;
 }
 
-function inHealthRange(records, range) {
+function inHealthRange(records, range, anchorDate) {
   if (!records.length) return [];
-  const from = healthRangeStart(range, records.at(-1)._date);
+  const from = healthRangeStart(range, anchorDate || records.at(-1)._date);
   return from ? records.filter((record) => record._date >= from) : records;
 }
 
@@ -1324,11 +1332,11 @@ function healthChartBase() {
       maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index', axis: 'x' },
       plugins: {
-        legend: { display: true, position: 'top', align: 'start', labels: { color: token('--chart-tick'), usePointStyle: true, pointStyle: 'circle', boxWidth: 7, boxHeight: 7, padding: 14, font: { family: 'Inter, system-ui, sans-serif', size: 11 } } },
+        legend: { display: true, position: 'top', align: 'start', labels: { color: token('--chart-tick'), usePointStyle: true, boxWidth: 7, boxHeight: 7, padding: 14, font: { family: 'Inter, system-ui, sans-serif', size: 11 } } },
         tooltip: { backgroundColor: token('--chart-tooltip'), padding: 10, cornerRadius: 7, titleFont: { family: 'Inter, system-ui, sans-serif', size: 11, weight: '600' }, bodyFont: { family: 'Inter, system-ui, sans-serif', size: 10 } },
       },
       scales: {
-        x: { grid: { display: false }, border: { display: false }, ticks: { color: token('--chart-tick'), maxTicksLimit: 9, maxRotation: 0, autoSkip: true, font: { family: 'Inter, system-ui, sans-serif', size: 10 }, callback(value) { return this.getLabelForValue(value); } } },
+        x: { grid: { display: false }, border: { display: false }, afterBuildTicks(axis) { const ticks = axis.ticks; const limit = axis.chart.width < 600 ? 5 : 7; if (ticks.length <= limit) return; const selected = new Set([0, ticks.length - 1]); for (let index = 1; index < limit - 1; index += 1) selected.add(Math.round(index * (ticks.length - 1) / (limit - 1))); axis.ticks = [...selected].sort((a, b) => a - b).map((index) => ticks[index]); }, ticks: { color: token('--chart-tick'), maxTicksLimit: 7, maxRotation: 0, autoSkip: true, includeBounds: true, font: { family: 'Inter, system-ui, sans-serif', size: 10 }, callback(value) { const label = this.getLabelForValue(value); return this.chart.width < 600 ? label.replace(/, \d{2}$/, '') : label; } } },
         y: { grid: { color: token('--chart-grid') }, border: { display: false }, ticks: { color: token('--chart-tick'), padding: 7, font: { family: 'Inter, system-ui, sans-serif', size: 10 } } },
       },
     },
@@ -1337,17 +1345,19 @@ function healthChartBase() {
 
 function renderHealth(data) {
   const sleepAll = sortedMetrics(data.sleep || []);
-  const weightAll = sortedMetrics(data.weight || []);
-  const sleep = inHealthRange(sleepAll, healthSettings.dateRange);
-  const weight = inHealthRange(weightAll, healthSettings.dateRange);
+  const weightAll = sortedMetrics(data.weight || []).filter((record) => Number.isFinite(healthNumber(record.kilograms)));
+  const rangeAnchor = [...sleepAll, ...weightAll].sort((a, b) => a._date - b._date).at(-1)?._date || new Date();
+  const sleep = inHealthRange(sleepAll, healthSettings.dateRange, rangeAnchor);
+  const weight = inHealthRange(weightAll, healthSettings.dateRange, rangeAnchor);
   const unit = healthSettings.weightUnit;
   const toDisplayWeight = (kilograms) => unit === 'lb' ? kilograms * 2.2046226218 : kilograms;
   const latestWeight = weightAll.at(-1);
   const previousWeight = weightAll[0];
-  const latestBodyFat = [...weightAll].reverse().find((record) => Number.isFinite(Number(record.bodyFatPercent)) && record.bodyFatPercent !== null);
-  const recentSleep = sleepAll.slice(-7);
-  const averageSleep = recentSleep.length ? recentSleep.reduce((sum, record) => sum + Number(record.durationHours || 0), 0) / recentSleep.length : null;
-  const efficiencies = recentSleep.map((record) => Number(record.efficiency ?? record.sleepEfficiency)).filter(Number.isFinite);
+  const latestBodyFat = [...weightAll].reverse().find((record) => Number.isFinite(healthNumber(record.bodyFatPercent)));
+  const sleepWithDuration = sleepAll.filter((record) => Number.isFinite(healthNumber(record.durationHours)));
+  const recentSleep = sleepWithDuration.slice(-7);
+  const averageSleep = recentSleep.length ? recentSleep.reduce((sum, record) => sum + healthNumber(record.durationHours), 0) / recentSleep.length : null;
+  const efficiencies = recentSleep.map((record) => healthNumber(record.efficiency ?? record.sleepEfficiency)).filter(Number.isFinite);
   const averageEfficiency = efficiencies.length ? efficiencies.reduce((sum, value) => sum + value, 0) / efficiencies.length : null;
   const weightValue = pageRoot.querySelector('#health-weight-value');
   const fatValue = pageRoot.querySelector('#health-fat-value');
@@ -1364,9 +1374,8 @@ function renderHealth(data) {
   pageRoot.querySelector('#health-efficiency-note').textContent = efficiencies.length ? `Average of ${efficiencies.length} recent efficiency readings` : 'No efficiency data in this source';
   const rangeCaption = pageRoot.querySelector('#health-range-caption');
   if (rangeCaption) {
-    const newest = [...weightAll, ...sleepAll].at(-1)?._date || new Date();
-    const from = healthRangeStart(healthSettings.dateRange, newest);
-    rangeCaption.textContent = from ? `${healthDateLabel(from)} – ${healthDateLabel(newest, true)}` : 'All recorded history';
+    const from = healthRangeStart(healthSettings.dateRange, rangeAnchor);
+    rangeCaption.textContent = from ? `${healthDateLabel(from)} – ${healthDateLabel(rangeAnchor, true)}` : 'All recorded history';
   }
   const selectedRange = healthSettings.dateRange;
   pageRoot.querySelectorAll('[data-health-range]').forEach((button) => {
@@ -1377,7 +1386,7 @@ function renderHealth(data) {
   const weightCount = pageRoot.querySelector('.health-story-weight .health-chart-source');
   const sleepCount = pageRoot.querySelector('#sleep-timing-chart')?.closest('.health-story')?.querySelector('.health-chart-source');
   const sleepQualityCount = pageRoot.querySelector('#sleep-quality-chart')?.closest('.health-story')?.querySelector('.health-chart-source');
-  if (weightCount) weightCount.textContent = `${weight.length} measurements${weight[0] ? ` · since ${healthDateLabel(weight[0]._date)}` : ''}`;
+  if (weightCount) weightCount.textContent = `${weight.length} measurements${weight.length ? ` · ${healthDateLabel(weight[0]._date, true)} – ${healthDateLabel(weight.at(-1)._date, true)}` : ''}`;
   const sleepSource = `${sleep.length} logged nights${sleep.length ? ` · ${healthDateLabel(sleep[0]._date, true)} – ${healthDateLabel(sleep.at(-1)._date, true)}` : ''}`;
   if (sleepCount) sleepCount.textContent = sleepSource;
   if (sleepQualityCount) sleepQualityCount.textContent = sleepSource;
@@ -1411,49 +1420,99 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
     return { labels, data };
   };
   const weightCanvas = pageRoot.querySelector('#weight-chart');
+  const weightModeSwitch = pageRoot.querySelector('.health-mobile-metric-switch');
+  if (weightModeSwitch) weightModeSwitch.hidden = !weightRecords.length;
   if (weightCanvas && weightRecords.length) {
     const labels = dateLabels(weightRecords);
-    const kilograms = (record) => Number(record.kilograms);
-    const bodyFat = (record) => record.bodyFatPercent == null ? NaN : Number(record.bodyFatPercent);
+    const kilograms = (record) => healthNumber(record.kilograms);
+    const bodyFat = (record) => healthNumber(record.bodyFatPercent);
     const weightData = weightRecords.map(kilograms);
-    const fatData = weightRecords.map(bodyFat);
+    const fatData = weightRecords.map((record) => {
+      const value = bodyFat(record);
+      return Number.isFinite(value) ? value : null;
+    });
     const avgWeight = rollingAverage(weightRecords, (record) => toDisplayWeight(kilograms(record)));
     const avgFat = rollingAverage(weightRecords, bodyFat);
     const datasets = [
       { label: `Weight (${unit})`, data: weightData.map(toDisplayWeight), yAxisID: 'y', showLine: false, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: blue, pointBorderColor: surface, pointBorderWidth: 1.25 },
       { label: '28-day weight trend', data: avgWeight, yAxisID: 'y', borderColor: blue, borderWidth: 2.2, pointRadius: 0, tension: 0.28, spanGaps: false },
-      { label: 'Body fat (%)', data: fatData, yAxisID: 'y1', showLine: false, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: red, pointBorderColor: surface, pointBorderWidth: 1.25 },
+      { label: 'Body fat (%)', data: fatData, yAxisID: 'y1', showLine: false, pointStyle: 'triangle', pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: 'transparent', pointBorderColor: red, pointBorderWidth: 1.75 },
       { label: '28-day body-fat trend', data: avgFat, yAxisID: 'y1', borderColor: red, borderWidth: 2.2, borderDash: [5, 4], pointRadius: 0, tension: 0.28, spanGaps: false },
     ];
-    activeCharts.push(new Chart(weightCanvas, {
+    const weightChart = new Chart(weightCanvas, {
       type: 'line', data: { labels, datasets },
-      options: { ...options, scales: {
+      options: { ...options, plugins: { ...options.plugins, legend: { ...options.plugins.legend, labels: { ...options.plugins.legend.labels, filter: (item) => !item.hidden } }, tooltip: { ...options.plugins.tooltip, callbacks: {
+        label(context) { const value = context.parsed.y; return ` ${context.dataset.label.startsWith('Weight') ? `${value.toFixed(1)} ${unit}` : `${value.toFixed(1)}%`}`; },
+      } } }, scales: {
         ...options.scales,
         y: { ...options.scales.y, title: { display: true, text: `Weight (${unit})`, color: blue, font: { size: 10, weight: '600' } }, ticks: { ...options.scales.y.ticks, color: blue } },
         y1: { position: 'right', grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Body fat (%)', color: red, font: { size: 10, weight: '600' } }, ticks: { color: red, padding: 7, font: { size: 9 }, callback: (value) => `${value}%` } },
-      }, plugins: { ...options.plugins, tooltip: { ...options.plugins.tooltip, callbacks: {
-        label(context) { const value = context.parsed.y; return ` ${context.dataset.label.startsWith('Weight') ? `${value.toFixed(1)} ${unit}` : `${value.toFixed(1)}%`}`; },
-      } } } },
-    }));
+      } },
+    });
+    activeCharts.push(weightChart);
+    const weightModeButtons = pageRoot.querySelectorAll('[data-health-weight-mode]');
+    const setWeightMode = (mode) => {
+      const bodyFatOnly = mode === 'body-fat';
+      const both = mode === 'both';
+      weightChart.data.datasets.forEach((dataset, index) => {
+        const isWeight = index < 2;
+        weightChart.setDatasetVisibility(index, bodyFatOnly ? !isWeight : both || isWeight);
+        dataset.yAxisID = !isWeight && bodyFatOnly ? 'y' : isWeight ? 'y' : 'y1';
+      });
+      const leftAxis = weightChart.options.scales.y;
+      const rightAxis = weightChart.options.scales.y1;
+      leftAxis.title.text = bodyFatOnly ? 'Body fat (%)' : `Weight (${unit})`;
+      leftAxis.title.color = bodyFatOnly ? red : blue;
+      leftAxis.ticks.color = bodyFatOnly ? red : blue;
+      leftAxis.ticks.callback = bodyFatOnly ? (value) => `${value}%` : undefined;
+      rightAxis.display = both;
+      rightAxis.title.display = both;
+      rightAxis.ticks.display = both;
+      weightCanvas.setAttribute('aria-label', bodyFatOnly
+        ? 'Body fat percentage measurements and 28-day trend over time'
+        : both
+          ? 'Weight and body fat measurements over time, with 28-day rolling trends'
+          : `Weight measurements in ${unit} and 28-day trend over time`);
+      weightModeButtons.forEach((button) => {
+        const active = button.dataset.healthWeightMode === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      weightChart.update();
+    };
+    const modeButtonHandlers = [];
+    weightModeButtons.forEach((button) => {
+      const handler = () => setWeightMode(button.dataset.healthWeightMode);
+      button.addEventListener('click', handler);
+      modeButtonHandlers.push([button, handler]);
+    });
+    const compactWeightView = window.matchMedia('(max-width: 520px)');
+    const updateCompactWeightView = (event) => setWeightMode(event.matches ? 'weight' : 'both');
+    updateCompactWeightView(compactWeightView);
+    compactWeightView.addEventListener('change', updateCompactWeightView);
+    healthWeightModeCleanup = () => {
+      compactWeightView.removeEventListener('change', updateCompactWeightView);
+      modeButtonHandlers.forEach(([button, handler]) => button.removeEventListener('click', handler));
+    };
   } else if (weightCanvas) {
     showHealthChartEmpty(weightCanvas, 'No weight readings in this date range.');
   }
 
   const compositionCanvas = pageRoot.querySelector('#composition-chart');
   if (compositionCanvas && weightRecords.length > 1) {
-    const baseline = weightRecords.find((record) => Number.isFinite(Number(record.kilograms)) && Number.isFinite(Number(record.bodyFatPercent)));
+    const baseline = weightRecords.find((record) => Number.isFinite(healthNumber(record.kilograms)) && healthNumber(record.kilograms) > 0 && Number.isFinite(healthNumber(record.bodyFatPercent)) && healthNumber(record.bodyFatPercent) > 0 && healthNumber(record.bodyFatPercent) < 100);
     if (baseline) {
       const baseWeight = Number(baseline.kilograms);
       const baseFatMass = baseWeight * Number(baseline.bodyFatPercent) / 100;
       const baseLeanMass = baseWeight - baseFatMass;
       const fatChange = weightRecords.map((record) => {
-        if (!Number.isFinite(Number(record.bodyFatPercent))) return null;
-        const mass = Number(record.kilograms) * Number(record.bodyFatPercent) / 100;
+        if (!Number.isFinite(healthNumber(record.bodyFatPercent)) || !Number.isFinite(healthNumber(record.kilograms))) return null;
+        const mass = healthNumber(record.kilograms) * healthNumber(record.bodyFatPercent) / 100;
         return ((mass - baseFatMass) / baseFatMass) * 100;
       });
       const leanChange = weightRecords.map((record) => {
-        if (!Number.isFinite(Number(record.bodyFatPercent))) return null;
-        const mass = Number(record.kilograms) * (1 - Number(record.bodyFatPercent) / 100);
+        if (!Number.isFinite(healthNumber(record.bodyFatPercent)) || !Number.isFinite(healthNumber(record.kilograms))) return null;
+        const mass = healthNumber(record.kilograms) * (1 - healthNumber(record.bodyFatPercent) / 100);
         return ((mass - baseLeanMass) / baseLeanMass) * 100;
       });
       const compositionSource = pageRoot.querySelector('#composition-chart')?.closest('.health-story')?.querySelector('.health-chart-source');
@@ -1474,13 +1533,13 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
     const wake = [];
     for (const record of sleepRecords) {
       const start = metricDate(record);
-      const duration = Number(record.durationHours);
-      if (Number.isFinite(Number(record.bedtimeHour))) {
-        const value = Number(record.bedtimeHour);
+      const duration = healthNumber(record.durationHours);
+      if (Number.isFinite(healthNumber(record.bedtimeHour))) {
+        const value = healthNumber(record.bedtimeHour);
         bedtime.push(overnightClockHour(value));
-        const wakeHour = Number(record.wakeHour);
-        wake.push(Number.isFinite(wakeHour) ? overnightClockHour(wakeHour < value ? wakeHour + 24 : wakeHour) : overnightClockHour(value) + duration);
-      } else if (start && Number.isFinite(duration)) {
+        const wakeHour = healthNumber(record.wakeHour);
+        wake.push(Number.isFinite(wakeHour) ? overnightClockHour(wakeHour < value ? wakeHour + 24 : wakeHour) : Number.isFinite(duration) && duration > 0 ? overnightClockHour(value) + duration : null);
+      } else if (start && Number.isFinite(duration) && duration > 0) {
         const startHour = clockHour(start);
         bedtime.push(overnightClockHour(startHour));
         wake.push(overnightClockHour(startHour) + duration);
@@ -1499,13 +1558,16 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
 
   const qualityCanvas = pageRoot.querySelector('#sleep-quality-chart');
   if (qualityCanvas && sleepRecords.length) {
-    const duration = sleepRecords.map((record) => Number.isFinite(Number(record.durationHours)) ? Number(record.durationHours) : null);
-    const efficiency = sleepRecords.map((record) => {
-      const value = Number(record.efficiency ?? record.sleepEfficiency);
+    const duration = sleepRecords.map((record) => {
+      const value = healthNumber(record.durationHours);
       return Number.isFinite(value) ? value : null;
     });
-    const avgDuration = rollingAverage(sleepRecords, (record) => Number(record.durationHours), 7, 2);
-    const avgEfficiency = rollingAverage(sleepRecords, (record) => Number(record.efficiency ?? record.sleepEfficiency), 7, 2);
+    const efficiency = sleepRecords.map((record) => {
+      const value = healthNumber(record.efficiency ?? record.sleepEfficiency);
+      return Number.isFinite(value) ? value : null;
+    });
+    const avgDuration = rollingAverage(sleepRecords, (record) => healthNumber(record.durationHours), 7, 2);
+    const avgEfficiency = rollingAverage(sleepRecords, (record) => healthNumber(record.efficiency ?? record.sleepEfficiency), 7, 2);
     const durationSeries = sleepTimeline(sleepRecords, duration);
     const avgDurationSeries = sleepTimeline(sleepRecords, avgDuration);
     const efficiencySeries = sleepTimeline(sleepRecords, efficiency);
@@ -1518,8 +1580,8 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
         { label: '7-night duration average', data: avgDurationSeries.data, yAxisID: 'y', borderColor: blue, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .25, spanGaps: false },
         { label: 'Nightly efficiency', data: efficiencySeries.data, yAxisID: 'y1', showLine: false, pointRadius: 3.2, pointHoverRadius: 4, pointBackgroundColor: green, pointBorderColor: surface, pointBorderWidth: 1 },
         { label: '7-night efficiency average', data: avgEfficiencySeries.data, yAxisID: 'y1', borderColor: green, borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: .25, spanGaps: false },
-        { label: '7 h reference', data: referenceSeries.data.map((value) => value == null ? null : 7), yAxisID: 'y', borderColor: 'rgba(83,111,161,.58)', borderDash: [2, 4], borderWidth: 1.2, pointRadius: 0, spanGaps: true },
-        { label: '95% reference', data: efficiencyReferenceSeries.data.map((value) => value == null ? null : 95), yAxisID: 'y1', borderColor: 'rgba(57,117,90,.58)', borderDash: [2, 4], borderWidth: 1.2, pointRadius: 0, spanGaps: true },
+        { label: '7 h reference', data: referenceSeries.data.map((value) => value == null ? null : 7), yAxisID: 'y', borderColor: blue, borderDash: [2, 5], borderWidth: 1.1, pointRadius: 0, spanGaps: true },
+        { label: '95% reference', data: efficiencyReferenceSeries.data.map((value) => value == null ? null : 95), yAxisID: 'y1', borderColor: green, borderDash: [2, 5], borderWidth: 1.1, pointRadius: 0, spanGaps: true },
       ] },
       options: { ...options, scales: {
         ...options.scales,

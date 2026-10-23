@@ -206,6 +206,7 @@ nav { gap: 0; margin-top: 40px; }
 .health-chart-container { position: relative; min-width: 0; height: 270px; margin-top: 13px; }
 .health-chart-wide { height: 330px; }
 .health-chart-medium { height: 285px; }
+.health-mobile-metric-switch { display: none; }
 .health-sleep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 34px; }
 .health-sleep-grid .health-story { border-bottom: 0; }
 .health-chart-container canvas[hidden] { display: none; }
@@ -260,6 +261,11 @@ nav { gap: 0; margin-top: 40px; }
   .health-chart-source { display: block; padding-top: 6px; }
   .health-chart-wide { height: 290px; }
   .health-chart-medium, .health-chart-container { height: 250px; }
+  .health-mobile-metric-switch { display: inline-flex; gap: 2px; margin-top: 10px; padding: 3px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-surface); }
+  .health-mobile-metric-switch[hidden] { display: none; }
+  .health-mobile-metric-switch [data-health-weight-mode="both"] { display: none; }
+  .health-mobile-metric-switch button { padding: 5px 9px; border: 0; border-radius: 5px; color: var(--color-muted); background: transparent; font-size: 10px; }
+  .health-mobile-metric-switch button.active { color: var(--color-primary); background: var(--color-primary-soft); font-weight: 600; }
   .health-settings-fields { grid-template-columns: 1fr; }
 }
 
@@ -915,6 +921,10 @@ body.is-calendar-page #current-page-label { display: none; }
 .sidebar-toggle { display: flex; align-items: center; justify-content: flex-start; gap: 9px; width: 100%; min-height: 34px; margin: 18px 0 0; padding: 0 10px; color: var(--color-muted); text-align: left; }
 .sidebar-toggle span { font-size: 10px; }
 .sidebar-toggle:hover { color: var(--color-text); background: var(--color-primary-soft); }
+@media (max-width: 900px) {
+  .sidebar-toggle,
+  body.is-sidebar-collapsed .sidebar-toggle { display: none; }
+}
 body.is-sidebar-collapsed .sidebar { align-items: stretch; padding-right: 8px; padding-left: 8px; }
 body.is-sidebar-collapsed .brand { justify-content: center; gap: 0; padding: 0; }
 body.is-sidebar-collapsed .brand > span:last-child,
