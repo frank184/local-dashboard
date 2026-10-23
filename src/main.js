@@ -406,7 +406,7 @@ function createWindow() {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 800,
+    minWidth: 320,
     minHeight: 600,
     title: 'Local Dashboard',
     backgroundColor: '#f5f6f8',
