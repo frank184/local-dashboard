@@ -33,6 +33,14 @@ function loadGoogleClientIdFromLocalEnv() {
 
 loadGoogleClientIdFromLocalEnv();
 
+// Electron does not currently recognize Hyprland/Omarchy as a Linux desktop
+// keyring environment. These sessions commonly expose GNOME Keyring through
+// Secret Service, so select libsecret explicitly instead of falling back to
+// Electron's basic_text backend.
+if (process.platform === 'linux' && /(?:^|[:;])(hyprland|omarchy)(?:$|[:;])/i.test(`${process.env.XDG_CURRENT_DESKTOP || ''}:${process.env.DESKTOP_SESSION || ''}:${process.env.XDG_SESSION_DESKTOP || ''}`)) {
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret');
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('dashboard:get-page-data', (_event, pageId) => {
     switch (pageId) {

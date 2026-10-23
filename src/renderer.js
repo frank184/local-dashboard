@@ -828,6 +828,7 @@ async function connectGoogleCalendarDirect(provider, trigger) {
     }, connection.calendars, true);
   } catch (error) {
     window.alert(error.message);
+  } finally {
     if (trigger.isConnected) {
       trigger.disabled = false;
       trigger.textContent = originalText;
