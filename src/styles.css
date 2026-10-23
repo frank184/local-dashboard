@@ -1202,15 +1202,20 @@ main, .content, #page-root, .page-view { min-width: 0; }
 .health-measurement-grid { min-width: 0; }
 .health-measurement-grid > .health-story { min-width: 0; }
 
-@media (min-width: 1800px) {
-  .content { max-width: 2048px; padding-right: clamp(64px, 5vw, 112px); padding-left: clamp(64px, 5vw, 112px); }
+@media (min-width: 1440px) {
+  .content { max-width: 2048px; padding-right: clamp(48px, 4vw, 72px); padding-left: clamp(48px, 4vw, 72px); }
   .health-measurement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(24px, 2.5vw, 48px); align-items: start; }
   .health-measurement-grid .health-story { min-width: 0; }
   .health-sleep-grid { column-gap: clamp(24px, 2.5vw, 48px); }
   .example-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .plugin-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .integration-provider-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .integration-provider-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .swatch-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1800px) {
+  .content { padding-right: clamp(64px, 5vw, 112px); padding-left: clamp(64px, 5vw, 112px); }
+  .integration-provider-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 480px) {
