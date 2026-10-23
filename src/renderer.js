@@ -1330,13 +1330,22 @@ function healthChartBase() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onResize(chart, size) {
+        const compact = size.width < 260;
+        chart.options.plugins.legend.labels.padding = compact ? 8 : 14;
+        for (const axis of Object.values(chart.options.scales)) {
+          if (!axis.title) continue;
+          axis.title.display = !compact && (axis === chart.options.scales.y1 ? axis.display : true);
+          if (axis.ticks) axis.ticks.padding = compact ? 3 : 7;
+        }
+      },
       interaction: { intersect: false, mode: 'index', axis: 'x' },
       plugins: {
         legend: { display: true, position: 'top', align: 'start', labels: { color: token('--chart-tick'), usePointStyle: true, boxWidth: 7, boxHeight: 7, padding: 14, font: { family: 'Inter, system-ui, sans-serif', size: 11 } } },
         tooltip: { backgroundColor: token('--chart-tooltip'), padding: 10, cornerRadius: 7, titleFont: { family: 'Inter, system-ui, sans-serif', size: 11, weight: '600' }, bodyFont: { family: 'Inter, system-ui, sans-serif', size: 10 } },
       },
       scales: {
-        x: { grid: { display: false }, border: { display: false }, afterBuildTicks(axis) { const ticks = axis.ticks; const limit = axis.chart.width < 600 ? 5 : 7; if (ticks.length <= limit) return; const selected = new Set([0, ticks.length - 1]); for (let index = 1; index < limit - 1; index += 1) selected.add(Math.round(index * (ticks.length - 1) / (limit - 1))); axis.ticks = [...selected].sort((a, b) => a - b).map((index) => ticks[index]); }, ticks: { color: token('--chart-tick'), maxTicksLimit: 7, maxRotation: 0, autoSkip: true, includeBounds: true, font: { family: 'Inter, system-ui, sans-serif', size: 10 }, callback(value) { const label = this.getLabelForValue(value); return this.chart.width < 600 ? label.replace(/, \d{2}$/, '') : label; } } },
+        x: { grid: { display: false }, border: { display: false }, afterBuildTicks(axis) { const ticks = axis.ticks; const limit = axis.chart.width < 260 ? 3 : axis.chart.width < 600 ? 5 : 7; if (ticks.length <= limit) return; const selected = new Set([0, ticks.length - 1]); for (let index = 1; index < limit - 1; index += 1) selected.add(Math.round(index * (ticks.length - 1) / (limit - 1))); axis.ticks = [...selected].sort((a, b) => a - b).map((index) => ticks[index]); }, ticks: { color: token('--chart-tick'), maxTicksLimit: 7, maxRotation: 0, autoSkip: true, includeBounds: true, font: { family: 'Inter, system-ui, sans-serif', size: 10 }, callback(value) { const label = this.getLabelForValue(value); return this.chart.width < 600 ? label.replace(/, \d{2}$/, '') : label; } } },
         y: { grid: { color: token('--chart-grid') }, border: { display: false }, ticks: { color: token('--chart-tick'), padding: 7, font: { family: 'Inter, system-ui, sans-serif', size: 10 } } },
       },
     },
@@ -1461,12 +1470,14 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
       });
       const leftAxis = weightChart.options.scales.y;
       const rightAxis = weightChart.options.scales.y1;
+      const compactChart = weightCanvas.parentElement.getBoundingClientRect().width < 260;
       leftAxis.title.text = bodyFatOnly ? 'Body fat (%)' : `Weight (${unit})`;
+      leftAxis.title.display = !compactChart;
       leftAxis.title.color = bodyFatOnly ? red : blue;
       leftAxis.ticks.color = bodyFatOnly ? red : blue;
       leftAxis.ticks.callback = bodyFatOnly ? (value) => `${value}%` : undefined;
       rightAxis.display = both;
-      rightAxis.title.display = both;
+      rightAxis.title.display = both && !compactChart;
       rightAxis.ticks.display = both;
       weightCanvas.setAttribute('aria-label', bodyFatOnly
         ? 'Body fat percentage measurements and 28-day trend over time'
@@ -1480,6 +1491,15 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
       });
       weightChart.update();
     };
+    const chartDensityObserver = new ResizeObserver(() => {
+      const compactChart = weightCanvas.parentElement.getBoundingClientRect().width < 260;
+      const both = weightChart.data.datasets.some((dataset, index) => index >= 2 && weightChart.isDatasetVisible(index));
+      weightChart.options.scales.y.title.display = !compactChart;
+      weightChart.options.scales.y1.title.display = both && !compactChart;
+      weightChart.options.plugins.legend.labels.padding = compactChart ? 8 : 14;
+      weightChart.update('none');
+    });
+    chartDensityObserver.observe(weightCanvas.parentElement);
     const modeButtonHandlers = [];
     weightModeButtons.forEach((button) => {
       const handler = () => setWeightMode(button.dataset.healthWeightMode);
@@ -1491,6 +1511,7 @@ function renderHealthCharts(sleepRecords, weightRecords, toDisplayWeight, unit) 
     updateCompactWeightView(compactWeightView);
     compactWeightView.addEventListener('change', updateCompactWeightView);
     healthWeightModeCleanup = () => {
+      chartDensityObserver.disconnect();
       compactWeightView.removeEventListener('change', updateCompactWeightView);
       modeButtonHandlers.forEach(([button, handler]) => button.removeEventListener('click', handler));
     };
