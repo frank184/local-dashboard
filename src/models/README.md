@@ -92,6 +92,14 @@ parameters. Use `query` for joins/aggregates and `where` for ordinary record
 queries. Full method comments live beside each method in
 [`application-record.js`](./application-record.js).
 
+Use a property setter for normalization that belongs to one attribute. For
+example, `TodoTask.title` trims on assignment and `TodoTask.completed`
+normalizes to a boolean. When a setter uses a backing property, declare the
+mapping in `static get attributeBackings()` so `toJSON()` exposes the public
+attribute name and hides the backing field. Keep validation for rules that
+decide whether a record may be saved, and keep defaults for values that are
+absent rather than values that need normalization.
+
 ## Current models
 
 - `Plugin` stores built-in/installed plugin metadata.

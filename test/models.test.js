@@ -121,14 +121,19 @@ test('models preserve the existing query output and provide basic record behavio
   assert.equal(CalendarEvent.all().some((event) => event.id === importedEvent.id && event.title === 'Imported'), true);
   assert.equal(CalendarEvent.deleteWhere({ integration_id: integrationId, source_plugin_id: 'google-calendar-connector', external_id: { $in: ['google-event-1'] } }), 1);
 
-  const event = CalendarEvent.create({ title: 'Model event', startAt: '2026-10-25', endAt: '2026-10-25', allDay: true });
+  const event = CalendarEvent.create({ title: '  Model event  ', startAt: '2026-10-25', endAt: '2026-10-25', allDay: true });
+  assert.equal(event.title, 'Model event');
+  assert.equal(event.allDay, true);
   const eventId = event.id;
   assert.equal(CalendarEvent.find(eventId).title, 'Model event');
   assert.ok(CalendarEvent.update(eventId, { title: 'Updated model event', startAt: '2026-10-26', endAt: '2026-10-26', allDay: true }));
   assert.equal(CalendarEvent.find(eventId).title, 'Updated model event');
   assert.equal(CalendarEvent.delete(eventId), true);
 
-  const task = TodoTask.create({ title: 'Model task', dueAt: '2026-10-25T09:30' });
+  const task = TodoTask.create({ title: '  Model task  ', dueAt: ' 2026-10-25T09:30 ', completed: 1 });
+  assert.equal(task.title, 'Model task');
+  assert.equal(task.dueAt, '2026-10-25T09:30:00');
+  assert.equal(task.completed, true);
   const taskId = task.id;
   assert.equal(TodoTask.find(taskId).title, 'Model task');
   assert.ok(TodoTask.update(taskId, { completed: true }));

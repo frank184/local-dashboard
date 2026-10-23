@@ -86,6 +86,7 @@ class ApplicationRecord {
   /** JSON column to decode when constructing records backed by a JSON payload. */
   static get payloadColumn() { return null; }
   static get jsonColumns() { return {}; }
+  static get attributeBackings() { return {}; }
 
   /** Execute a parameterized SQL query and return its rows. Use for joins and aggregates. */
   static query(sql, ...bindings) { return this.connection.prepare(sql).all(...bindings); }
@@ -304,7 +305,15 @@ class ApplicationRecord {
   }
 
   /** Plain attributes for IPC and JSON serialization. */
-  toJSON() { return { ...this }; }
+  toJSON() {
+    const attributes = { ...this };
+    for (const [attribute, backing] of Object.entries(this.constructor.attributeBackings)) {
+      if (!Object.prototype.hasOwnProperty.call(this, backing)) continue;
+      delete attributes[backing];
+      attributes[attribute] = this[attribute];
+    }
+    return attributes;
+  }
 
   /**
    * Run synchronous model/database work atomically. Commits the callback result,

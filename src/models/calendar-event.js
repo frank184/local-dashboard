@@ -6,6 +6,7 @@ class CalendarEvent extends ApplicationRecord {
   static get defaultScope() { return { record_type: 'calendar_events' }; }
   static get defaultOrderBy() { return 'occurred_at'; }
   static get payloadColumn() { return 'payload_json'; }
+  static get attributeBackings() { return { title: '_title', allDay: '_allDay' }; }
   static get defaults() {
     return {
       id: () => `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -24,8 +25,14 @@ class CalendarEvent extends ApplicationRecord {
     };
   }
 
+  get title() { return this._title; }
+  set title(value) { this._title = String(value ?? '').trim(); }
+
+  get allDay() { return this._allDay; }
+  set allDay(value) { this._allDay = Boolean(value); }
+
   validate() {
-    if (!this.title?.trim()) throw new Error('Event title is required.');
+    if (!this.title) throw new Error('Event title is required.');
     if (!this.startAt || !Number.isFinite(new Date(this.startAt).getTime())) throw new Error('Enter a valid event date and time.');
     if (this.record_type && this.record_type !== 'calendar_events') throw new Error('CalendarEvent record_type must be calendar_events.');
   }
@@ -36,7 +43,7 @@ class CalendarEvent extends ApplicationRecord {
     this.occurred_at = this.startAt;
     const payload = {
       ...(current ? JSON.parse(current.payload_json) : {}),
-      title: this.title.trim(),
+      title: this.title,
       detail: this.description,
       description: this.description,
       location: this.location,
@@ -44,7 +51,7 @@ class CalendarEvent extends ApplicationRecord {
       startAt: this.startAt,
       endAt: this.endAt,
       calendarId: this.calendarId,
-      allDay: Boolean(this.allDay),
+      allDay: this.allDay,
       color: this.color,
     };
     this.payload_json = JSON.stringify(payload);
