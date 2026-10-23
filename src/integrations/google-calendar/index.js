@@ -14,6 +14,7 @@ async function connectGoogleCalendar({ clientId }) {
   const verifier = base64url(crypto.randomBytes(48));
   const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
   const callback = await new Promise((resolve, reject) => {
+    let redirectUri;
     const server = http.createServer((request, response) => {
       const url = new URL(request.url, 'http://127.0.0.1');
       if (request.method !== 'GET' || url.pathname !== CALLBACK_PATH) { response.writeHead(404).end(); return; }
@@ -28,7 +29,7 @@ async function connectGoogleCalendar({ clientId }) {
     server.on('error', (error) => { clearTimeout(timeout); reject(new Error(`Could not open the Google OAuth callback listener: ${error.message}`)); });
     server.listen(0, '127.0.0.1', async () => {
       const address = server.address();
-      const redirectUri = `http://127.0.0.1:${address.port}${CALLBACK_PATH}`;
+      redirectUri = `http://127.0.0.1:${address.port}${CALLBACK_PATH}`;
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       for (const [key, value] of Object.entries({
         client_id: clientId.trim(), redirect_uri: redirectUri, response_type: 'code',
