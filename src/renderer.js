@@ -107,6 +107,9 @@ const themeToggle = document.querySelector('.theme-toggle');
 let currentPage = '';
 let sidebarCollapsed = localStorage.getItem('local-dashboard-sidebar-collapsed') === 'true';
 let activeCharts = [];
+let integrationRecords = [];
+let integrationSearch = '';
+let integrationCategory = '';
 let calendarDate = new Date();
 let calendarSearch = '';
 let calendarMonthWheelDelta = 0;
@@ -229,6 +232,12 @@ function renderIcons(root) {
 // Hash links with a current route can still trigger native fragment scrolling. Keep
 // the active navigation click on the current page a no-op.
 document.addEventListener('click', (event) => {
+  const addIntegrationLink = event.target.closest('a[href="#available-integrations"]');
+  if (addIntegrationLink) {
+    event.preventDefault();
+    pageRoot.querySelector('#available-integrations')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   const link = event.target.closest('a.nav-item');
   if (!link) return;
   const targetPage = link.getAttribute('href')?.slice(1);
@@ -263,6 +272,13 @@ function renderPage(requestedPage) {
   });
   pageRoot.querySelector('[data-action="new-task"]')?.addEventListener('click', () => showTaskForm());
   pageRoot.querySelector('[data-action="new-plugin"]')?.addEventListener('click', () => showPluginForm());
+  const integrationSearchInput = pageRoot.querySelector('#integration-search');
+  const integrationCategorySelect = pageRoot.querySelector('#integration-category');
+  if (integrationSearchInput && integrationCategorySelect) {
+    integrationSearchInput.value = integrationSearch;
+    integrationSearchInput.addEventListener('input', () => updateIntegrationQuery(integrationSearchInput.value, integrationCategorySelect.value));
+    integrationCategorySelect.addEventListener('change', () => updateIntegrationQuery(integrationSearchInput.value, integrationCategorySelect.value));
+  }
   pageRoot.querySelectorAll('[data-calendar-nav]').forEach((button) => button.addEventListener('click', () => moveCalendar(button.dataset.calendarNav)));
   pageRoot.querySelector('#calendar-board')?.addEventListener('wheel', (event) => {
     if (calendarView !== 'month' || Math.abs(event.deltaY) < 12) return;
@@ -587,6 +603,7 @@ function makeIntegrationMark(provider) {
 }
 
 function renderIntegrations(integrations) {
+  integrationRecords = integrations;
   const connectionList = pageRoot.querySelector('#integration-connection-list');
   const providerGrid = pageRoot.querySelector('#integration-provider-grid');
   if (!connectionList || !providerGrid) return;
@@ -604,17 +621,31 @@ function renderIntegrations(integrations) {
     { id: 'withings', name: 'Withings', description: 'Import weight measurements into Health.', icon: 'scale', brandIcon: 'withings.png', pluginId: 'withings-connector', category: 'Health' },
     { id: 'strava', name: 'Strava', description: 'Bring workouts and activity into your local data.', icon: 'activity', brandIcon: 'strava.svg', pluginId: 'strava-connector', category: 'Health' },
   ];
+  const categorySelect = pageRoot.querySelector('#integration-category');
+  if (categorySelect) {
+    const categories = [...new Set(providers.map((provider) => provider.category).filter(Boolean))].sort();
+    categorySelect.replaceChildren(new Option('All categories', ''));
+    for (const category of categories) categorySelect.add(new Option(category, category));
+    if (categories.includes(integrationCategory)) categorySelect.value = integrationCategory;
+    else integrationCategory = categorySelect.value = '';
+  }
   for (const provider of providers) {
     const savedAccount = integrations.find((item) => item.provider_id === provider.id && item.config_json);
     if (savedAccount) { try { provider.clientId = JSON.parse(savedAccount.config_json).clientId || ''; } catch {} }
   }
   const count = pageRoot.querySelector('#integration-count');
-  if (count) count.textContent = `${integrations.length} connection${integrations.length === 1 ? '' : 's'}`;
+  const matchingIntegrations = integrations.filter((integration) => {
+    const provider = providers.find((item) => item.id === integration.provider_id);
+    return matchesIntegrationQuery(provider, `${integration.display_name} ${integration.account_label || ''}`);
+  });
+  if (count) count.textContent = `${matchingIntegrations.length}${matchingIntegrations.length !== integrations.length ? ` of ${integrations.length}` : ''} connection${integrations.length === 1 ? '' : 's'}`;
   connectionList.replaceChildren();
-  if (!integrations.length) {
-    const empty = document.createElement('div'); empty.className = 'integration-empty'; empty.textContent = 'No external accounts connected yet.'; connectionList.append(empty);
+  if (!matchingIntegrations.length) {
+    const empty = document.createElement('div'); empty.className = 'integration-empty';
+    empty.textContent = integrations.length ? 'No connections match this search.' : 'No external accounts connected yet.';
+    connectionList.append(empty);
   }
-  for (const integration of integrations) {
+  for (const integration of matchingIntegrations) {
     const row = document.createElement('article'); row.className = 'integration-connection-card';
     const provider = providers.find((item) => item.id === integration.provider_id) || { icon: 'cable', category: 'Service' };
     const iconWrap = makeIntegrationMark(provider);
@@ -661,7 +692,10 @@ function renderIntegrations(integrations) {
     row.append(iconWrap, copy, status, actions); connectionList.append(row);
   }
   providerGrid.replaceChildren();
-  for (const provider of providers) {
+  const matchingProviders = providers.filter((provider) => matchesIntegrationQuery(provider));
+  const resultsLabel = pageRoot.querySelector('#integration-results-label');
+  if (resultsLabel) resultsLabel.textContent = `${matchingProviders.length} available`;
+  for (const provider of matchingProviders) {
     const accountCount = integrations.filter((item) => item.provider_id === provider.id).length;
     const card = document.createElement('article'); card.className = 'integration-provider-card';
     const head = document.createElement('div'); head.className = 'integration-provider-head';
@@ -676,7 +710,28 @@ function renderIntegrations(integrations) {
     connect.addEventListener('click', () => showIntegrationForm(provider));
     card.append(head, name, description, availability, connect); providerGrid.append(card);
   }
+  if (!matchingProviders.length) {
+    const empty = document.createElement('p'); empty.className = 'integration-provider-empty'; empty.textContent = 'No integrations match this search.';
+    providerGrid.append(empty);
+  }
   renderIcons(connectionList); renderIcons(providerGrid);
+}
+
+function matchesIntegrationQuery(provider, extraText = '') {
+  if (integrationCategory && provider?.category !== integrationCategory) return false;
+  const haystack = `${provider?.name || ''} ${provider?.description || ''} ${provider?.category || ''} ${provider?.id || ''} ${extraText}`.toLowerCase();
+  return integrationSearch.toLowerCase().split(/\s+/).filter(Boolean).every((term) => haystack.includes(term));
+}
+
+function updateIntegrationQuery(search, category) {
+  integrationSearch = search.trim();
+  integrationCategory = category;
+  const params = new URLSearchParams();
+  if (integrationCategory) params.set('category', integrationCategory);
+  if (integrationSearch) params.set('q', integrationSearch);
+  const query = params.toString();
+  window.history.replaceState(null, '', `#integrations${query ? `?${query}` : ''}`);
+  renderIntegrations(integrationRecords);
 }
 
 async function showIntegrationCalendarsForm(integration) {
@@ -1299,10 +1354,22 @@ renderIcons(document.querySelector('.sidebar'));
 void loadPluginNavigation();
 
 function routeFromHash() {
-  const requestedPage = window.location.hash.slice(1) || 'overview';
+  const [requestedPage, queryString = ''] = (window.location.hash.slice(1) || 'overview').split('?');
   if (!Object.hasOwn(pageTemplates, requestedPage)) {
     window.history.replaceState(null, '', '#overview');
     renderPage('overview');
+    return;
+  }
+  if (requestedPage === 'integrations') {
+    const params = new URLSearchParams(queryString);
+    integrationCategory = params.get('category') || '';
+    integrationSearch = params.get('q') || '';
+  } else {
+    integrationCategory = '';
+    integrationSearch = '';
+  }
+  if (currentPage === requestedPage) {
+    if (requestedPage === 'integrations') void hydratePage('integrations');
     return;
   }
   renderPage(requestedPage);

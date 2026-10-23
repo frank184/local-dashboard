@@ -6,7 +6,12 @@
   </div>
   <div class="integration-section-heading"><div><h2>Your connections</h2><p>Account links and their local sync status.</p></div><span id="integration-count" class="badge badge-neutral">0 connections</span></div>
   <div id="integration-connection-list" class="integration-connection-list"></div>
-  <div class="integration-section-heading available-integrations-heading" id="available-integrations"><div><h2>Available integrations</h2><p>Choose a provider to add an account. Some connectors still need implementation or platform support.</p></div></div>
+  <div class="integration-section-heading available-integrations-heading" id="available-integrations"><div><h2>Available integrations</h2><p>Find a service by category or search its name and capabilities.</p></div></div>
+  <div class="integration-browser-controls">
+    <label class="integration-search-field"><span class="sr-only">Search integrations</span><i data-lucide="search" class="icon" aria-hidden="true"></i><input id="integration-search" type="search" placeholder="Search integrations" autocomplete="off"></label>
+    <label class="integration-category-field"><span class="sr-only">Filter by category</span><select id="integration-category"><option value="">All categories</option></select></label>
+    <span id="integration-results-label" class="integration-results-label" aria-live="polite"></span>
+  </div>
   <div id="integration-provider-grid" class="integration-provider-grid"></div>
   <p class="mock-data-note"><i data-lucide="info" class="icon" aria-hidden="true"></i> Fitbit uses its legacy Web API and syncs 14 days of sleep and weigh-ins on demand. Google Health API is a separate successor service; Health Connect is Android-only.</p>
 </section>
