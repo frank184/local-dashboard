@@ -68,6 +68,7 @@ const iconSet = {
   HeartPulse,
   Info,
   LayoutDashboard,
+  Landmark,
   ListTodo,
   Moon,
   MoreHorizontal,
@@ -1248,7 +1249,13 @@ function renderCalendarUpcoming(events) {
   for (const event of next) {
     const row = document.createElement('div'); row.className = 'calendar-upcoming-row';
     const date = document.createElement('span'); date.className = 'calendar-upcoming-date';
-    date.textContent = event.allDay ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(getEventStart(event)) : new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(getEventStart(event));
+    const start = getEventStart(event);
+    date.textContent = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(start);
+    if (!event.allDay) {
+      const time = document.createElement('small');
+      time.textContent = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start);
+      date.append(time);
+    }
     const button = document.createElement('button'); button.type = 'button'; button.className = `calendar-upcoming-event color-${event.color || 'blue'}`; button.textContent = event.title || '(No title)'; button.addEventListener('click', () => showEventForm(event));
     row.append(date, button); list.append(row);
   }

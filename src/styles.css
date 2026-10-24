@@ -977,7 +977,8 @@ body.is-calendar-page .content { max-width: none; padding: 22px 28px 24px; }
 .calendar-upcoming { display: grid; gap: 5px; }
 .calendar-upcoming-empty, .calendar-side-copy { margin: 0; color: var(--color-muted); font-size: 9px; line-height: 1.5; }
 .calendar-upcoming-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 6px; align-items: start; }
-.calendar-upcoming-date { padding-top: 4px; color: var(--color-muted); font-size: 8px; }
+.calendar-upcoming-date { display: grid; padding-top: 4px; color: var(--color-muted); font-size: 8px; }
+.calendar-upcoming-date small { font-size: 7px; }
 .calendar-upcoming-event { overflow: hidden; border: 0; border-left: 2px solid; border-radius: 4px; padding: 5px 6px; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
 .calendar-side-panel .text-link { font-size: 8px; }
 .calendar-shortcuts p { display: flex; justify-content: space-between; gap: 5px; margin: 7px 0 0; color: var(--color-muted); font-size: 8px; }
