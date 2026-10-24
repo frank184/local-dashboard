@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "finance",
+  "name": "Finance",
+  "version": "0.1.0",
+  "domainId": "personal-finance",
+  "kind": "feature",
+  "description": "A private view of spending, cash flow, and transactions.",
+  "icon": "wallet",
+  "navigation": { "section": "Personal", "order": 25 },
+  "ui": { "page": "page.html", "contributes": ["navigation", "page"] },
+  "data": { "reads": ["finance_transactions"], "writes": ["finance_transactions"] }
+}

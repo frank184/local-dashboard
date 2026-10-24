@@ -6,6 +6,8 @@ import todosPage from './todos/page.html?raw';
 import healthManifest from './health/manifest.json';
 import healthPage from './health/page.html?raw';
 import healthSettingsPage from './health/settings.html?raw';
+import financeManifest from './finance/manifest.json';
+import financePage from './finance/page.html?raw';
 
 // This is the renderer's build-time catalog. SQLite controls whether a plugin
 // is installed/enabled; the manifest supplies its trusted bundled UI contract.
@@ -13,6 +15,7 @@ export const bundledPlugins = [
   { manifest: Object.freeze(calendarManifest), pageTemplate: calendarPage },
   { manifest: Object.freeze(todosManifest), pageTemplate: todosPage },
   { manifest: Object.freeze(healthManifest), pageTemplate: healthPage },
+  { manifest: Object.freeze(financeManifest), pageTemplate: financePage },
 ];
 
 export const bundledPluginById = new Map(bundledPlugins.map((plugin) => [plugin.manifest.id, plugin]));

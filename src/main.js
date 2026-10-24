@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { openDatabase } = require('./db/database');
@@ -10,16 +10,21 @@ const { Workflow } = require('./models/workflow');
 const { CalendarEvent } = require('./models/calendar-event');
 const { TodoTask } = require('./models/todo-task');
 const { HealthMetric } = require('./models/health-metric');
+const { FinanceTransaction } = require('./models/finance-transaction');
+const { randomUUID } = require('node:crypto');
+const { MAX_FILE_BYTES, parseStatementBuffer, buildPreview, slicePreview, isSupportedCurrency, transactionFingerprint } = require('./services/finance/statement-csv');
 const { connectFitbit, syncFitbit } = require('./integrations/fitbit');
 const { connectGoogleCalendar, listGoogleCalendars, syncGoogleCalendar } = require('./integrations/google-calendar');
 const { connectOutlookCalendar, listOutlookCalendars, syncOutlookCalendar } = require('./integrations/outlook-calendar');
 
 const activeWorkflowRuns = new Set();
+const financeImportSessions = new Map();
+const financeStatementWorkflowId = 'workflow-finance-statement-import';
 
 function loadGoogleOAuthSettingsFromLocalEnv() {
   try {
     const envFile = fs.readFileSync(path.join(__dirname, '../.env'), 'utf8');
-    for (const key of ['GOOGLE_CALENDAR_CLIENT_ID', 'GOOGLE_CALENDAR_CLIENT_SECRET']) {
+    for (const key of ['GOOGLE_CALENDAR_CLIENT_ID']) {
       if (process.env[key]?.trim()) continue;
       const line = envFile.split(/\r?\n/).find((entry) => new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`).test(entry));
       if (!line) continue;
@@ -61,11 +66,94 @@ function registerIpcHandlers() {
         const metrics = HealthMetric.all().map((metric) => metric.toJSON());
         return { sleep: metrics.filter((metric) => metric.record_type === 'health_sleep'), weight: metrics.filter((metric) => metric.record_type === 'health_weight'), settings: getPluginSetting('health', 'dashboard') || { weightUnit: 'lb', dateRange: '18m' } };
       }
+      case 'finance': return { transactions: FinanceTransaction.all().map((record) => record.toJSON()), lastImportRun: latestFinanceImportRun(), importWorkflowEnabled: Boolean(Workflow.find(financeStatementWorkflowId)?.enabled) };
       default: return {};
     }
   });
   ipcMain.handle('dashboard:set-task-completed', (_event, id, completed) => Boolean(TodoTask.update(id, { completed: Boolean(completed) })));
   ipcMain.handle('dashboard:create-task', (_event, task) => TodoTask.create(task).id);
+  ipcMain.handle('dashboard:create-finance-transaction', (_event, transaction) => FinanceTransaction.createLocal(transaction));
+  ipcMain.handle('dashboard:clear-finance-samples', () => FinanceTransaction.clearSamples());
+  ipcMain.handle('dashboard:choose-finance-statement', async () => {
+    const workflow = Workflow.find(financeStatementWorkflowId);
+    if (!workflow || !workflow.enabled) throw new Error('The Finance statement import workflow is paused. Resume it from Workflows before importing.');
+    const selection = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow(), {
+      title: 'Choose a bank statement', properties: ['openFile'],
+      filters: [{ name: 'CSV statement', extensions: ['csv', 'tsv'] }],
+    });
+    if (selection.canceled || !selection.filePaths[0]) return { cancelled: true };
+    for (const [id, session] of financeImportSessions) cancelFinanceImportSession(id, session);
+    const filePath = selection.filePaths[0];
+    const filename = path.basename(filePath);
+    const workflowRunId = Workflow.startWorkflowRun(financeStatementWorkflowId);
+    try {
+      Workflow.updateWorkflowRunProgress(workflowRunId, { stage: 'read_file', filename });
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size > MAX_FILE_BYTES) throw new Error('This CSV is larger than the 10 MB import limit.');
+      const buffer = await fs.promises.readFile(filePath);
+      const statement = parseStatementBuffer(buffer, filename);
+      const importId = randomUUID();
+      financeImportSessions.set(importId, { statement, buffer, filename, workflowRunId, preview: null, mapping: null, existingFingerprints: null, createdAt: Date.now(), reviewedPages: new Set(), rowOverrides: {}, keepPossibleDuplicates: false, currentPreviewOffset: 0 });
+      Workflow.updateWorkflowRunProgress(workflowRunId, { stage: 'map_columns', filename, rowCount: statement.rows.length });
+      return { importId, filename, headers: statement.headers, delimiter: statement.delimiter, suggestions: statement.suggestions, rowCount: statement.rows.length,
+        sampleRows: statement.rows.slice(0, 5).map(({ rowNumber, cells }) => ({ rowNumber, cells: cells.slice(0, 12).map((cell) => cell.slice(0, 240)) })), delimiterOptions: statement.delimiterOptions };
+    } catch (error) {
+      Workflow.finishWorkflowRun(financeStatementWorkflowId, workflowRunId, { stage: 'failed', filename }, error.message);
+      throw error;
+    }
+  });
+  ipcMain.handle('dashboard:select-finance-statement-delimiter', (_event, request) => {
+    const session = getFinanceImportSession(request?.importId);
+    const statement = parseStatementBuffer(session.buffer, session.filename, request.delimiter);
+    session.statement = statement; session.preview = null; session.previewKey = null; session.mapping = null;
+    session.reviewedPages.clear(); session.rowOverrides = {}; session.keepPossibleDuplicates = false;
+    session.currentPreviewOffset = 0;
+    return { headers: statement.headers, delimiter: statement.delimiter, suggestions: statement.suggestions, rowCount: statement.rows.length,
+      sampleRows: statement.rows.slice(0, 5).map(({ rowNumber, cells }) => ({ rowNumber, cells: cells.slice(0, 12).map((cell) => cell.slice(0, 240)) })), delimiterOptions: statement.delimiterOptions };
+  });
+  ipcMain.handle('dashboard:preview-finance-statement', (_event, request) => {
+    const session = getFinanceImportSession(request?.importId);
+    const existingFingerprints = session.existingFingerprints || FinanceTransaction.all().filter((record) => record.sourceName !== 'Local sample').map((record) => transactionFingerprint({ date: String(record.occurred_at).slice(0, 10), description: record.merchant || '', amount: record.amount, currency: record.currency || 'CAD', direction: record.direction || '', accountLabel: record.accountLabel || '' }));
+    const mapping = request.mapping || session.mapping;
+    const fallbackCurrency = request.fallbackCurrency || session.fallbackCurrency || 'CAD';
+    const accountLabel = request.accountLabel ?? session.accountLabel ?? '';
+    const previewKey = JSON.stringify({ mapping, fallbackCurrency, accountLabel, delimiter: session.statement.delimiter });
+    if (!session.preview || session.previewKey !== previewKey) {
+      session.reviewedPages.clear(); session.rowOverrides = {}; session.keepPossibleDuplicates = false;
+      Workflow.updateWorkflowRunProgress(session.workflowRunId, { stage: 'normalize', filename: session.filename, rowCount: session.statement.rows.length });
+      session.preview = buildPreview(session.statement, mapping, { fallbackCurrency, accountLabel, existingFingerprints });
+      session.previewKey = previewKey;
+    }
+    const preview = slicePreview(session.preview, request.offset || 0);
+    session.currentPreviewOffset = preview.previewOffset;
+    session.mapping = mapping; session.fallbackCurrency = fallbackCurrency; session.accountLabel = accountLabel; session.existingFingerprints = existingFingerprints;
+    Workflow.updateWorkflowRunProgress(session.workflowRunId, { stage: 'deduplicate', filename: session.filename, validCount: preview.validCount, duplicateCount: preview.duplicateCount });
+    Workflow.updateWorkflowRunProgress(session.workflowRunId, { stage: 'preview_rows', filename: session.filename, validCount: preview.validCount, invalidCount: preview.invalidCount, duplicateCount: preview.duplicateCount });
+    const { _normalizedRows, _allRows, ...publicPreview } = preview;
+    return publicPreview;
+  });
+  ipcMain.handle('dashboard:review-finance-statement-page', (_event, request) => {
+    const session = getFinanceImportSession(request?.importId);
+    if (!session.preview || request.offset !== session.currentPreviewOffset) throw new Error('Review the currently displayed page before continuing.');
+    const rows = slicePreview(session.preview, request.offset).previewRows;
+    if (typeof request.keepPossibleDuplicates === 'boolean' && request.keepPossibleDuplicates !== session.keepPossibleDuplicates) session.reviewedPages.clear();
+    if (typeof request.keepPossibleDuplicates === 'boolean') session.keepPossibleDuplicates = request.keepPossibleDuplicates;
+    if (request.acknowledged !== true) { session.reviewedPages.delete(request.offset); return { reviewedPages: session.reviewedPages.size }; }
+    for (const [rowNumber, included] of Object.entries(request.rowOverrides || {})) {
+      const row = rows.find((candidate) => candidate.rowNumber === Number(rowNumber));
+      if (!row?.valid || typeof included !== 'boolean') throw new Error('A row selection does not belong to the current review page.');
+      session.rowOverrides[row.rowNumber] = included;
+    }
+    session.reviewedPages.add(request.offset);
+    return { reviewedPages: session.reviewedPages.size, keepPossibleDuplicates: session.keepPossibleDuplicates };
+  });
+  ipcMain.handle('dashboard:import-finance-statement', (_event, request) => commitFinanceImport(request?.importId));
+  ipcMain.handle('dashboard:cancel-finance-statement', (_event, importId) => {
+    const session = financeImportSessions.get(importId);
+    if (!session) return false;
+    cancelFinanceImportSession(importId, session);
+    return true;
+  });
   ipcMain.handle('dashboard:update-task', (_event, task) => Boolean(TodoTask.update(task.id, task)));
   ipcMain.handle('dashboard:delete-task', (_event, id) => TodoTask.delete(id));
   ipcMain.handle('dashboard:save-plugin', (_event, plugin) => {
@@ -93,16 +181,15 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('dashboard:set-integration-status', (_event, id, status) => Integration.setIntegrationStatus(id, status));
   ipcMain.handle('dashboard:set-workflow-enabled', (_event, id, enabled) => Workflow.setWorkflowEnabled(id, enabled));
+  ipcMain.handle('dashboard:update-workflow-schedule', (_event, id, intervalMinutes) => Workflow.updateWorkflowSchedule(id, intervalMinutes));
   ipcMain.handle('dashboard:run-workflow', (_event, id) => executeWorkflow(id));
   ipcMain.handle('dashboard:connect-google-calendar', async (_event, { integrationId }) => {
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
     if (!clientId?.trim()) throw new Error('Set GOOGLE_CALENDAR_CLIENT_ID in your environment or local .env file before connecting Google Calendar.');
-    const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
-    if (!clientSecret?.trim()) throw new Error('Set GOOGLE_CALENDAR_CLIENT_SECRET in your local .env file. Download the Desktop OAuth client JSON from Google Cloud and copy its client_secret value.');
     if (!await safeStorage.isAsyncEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('OS credential storage is unavailable. Set up your desktop keyring before connecting Google Calendar.');
     const existing = integrationId ? Integration.find(integrationId) : null;
     if (integrationId && (!existing || existing.provider_id !== 'google-calendar')) throw new Error('Google Calendar connection not found.');
-    const connected = await connectGoogleCalendar({ clientId, clientSecret });
+    const connected = await connectGoogleCalendar({ clientId });
     if (!connected.token.refresh_token && existing?.secret_blob && JSON.parse(existing.config_json || '{}').clientId === clientId.trim()) {
       const previousToken = JSON.parse((await safeStorage.decryptStringAsync(Buffer.from(existing.secret_blob, 'base64'))).result);
       connected.token.refresh_token = previousToken.refresh_token;
@@ -200,6 +287,73 @@ function integrationSummaries() {
     FROM integrations ORDER BY display_name, account_label`);
 }
 
+function latestFinanceImportRun() {
+  const row = ApplicationRecord.query(`SELECT r.id, r.status, r.started_at, r.finished_at, r.result_json, r.error_text
+    FROM workflow_runs r WHERE r.workflow_id = ? ORDER BY r.started_at DESC, r.rowid DESC LIMIT 1`, financeStatementWorkflowId)[0];
+  return row ? { ...row, result: row.result_json ? JSON.parse(row.result_json) : null } : null;
+}
+
+function getFinanceImportSession(importId) {
+  const session = financeImportSessions.get(importId);
+  if (!session) throw new Error('This import session expired. Choose the statement file again.');
+  if (Date.now() - session.createdAt > 30 * 60 * 1000) { cancelFinanceImportSession(importId, session); throw new Error('This import session expired after 30 minutes. Choose the statement file again.'); }
+  return session;
+}
+
+function commitFinanceImport(importId) {
+  const session = getFinanceImportSession(importId);
+  if (!session.preview) throw new Error('Preview the mapped rows before importing them.');
+  const pageOffsets = Array.from({ length: Math.ceil(session.preview.rowCount / 100) }, (_value, index) => index * 100);
+  if (pageOffsets.some((offset) => !session.reviewedPages.has(offset))) throw new Error('Review and confirm every preview page before importing.');
+  try {
+    Workflow.updateWorkflowRunProgress(session.workflowRunId, { stage: 'commit_records', filename: session.filename, validCount: session.preview.validCount });
+    const batchId = randomUUID();
+    const accountLabel = String(session.accountLabel || '').trim().slice(0, 80);
+    const accepted = session.preview._normalizedRows.filter((row) => Object.hasOwn(session.rowOverrides, row.rowNumber)
+      ? session.rowOverrides[row.rowNumber] : (session.keepPossibleDuplicates || !row.possibleDuplicate));
+    const acceptedRowNumbers = new Set(accepted.map((row) => row.rowNumber));
+    const skippedDuplicateCount = session.preview._normalizedRows.filter((row) => row.possibleDuplicate && !acceptedRowNumbers.has(row.rowNumber)).length;
+    const excludedCount = session.preview.validCount - accepted.length - skippedDuplicateCount;
+    const receipt = { stage: 'completed', filename: session.filename, batchId,
+      importedCount: accepted.length, skippedDuplicateCount, excludedCount, invalidCount: session.preview.invalidCount,
+      rowCount: session.preview.rowCount, accountLabel, currencyCodes: [...new Set(accepted.map((row) => row.currency))] };
+    FinanceTransaction.transaction(() => {
+      for (const row of accepted) {
+        const id = `finance-import-${randomUUID()}`;
+        const payload = {
+          merchant: row.description,
+          category: row.category || 'Uncategorized',
+          amount: row.amount,
+          direction: row.direction,
+          currency: row.currency,
+          postedAt: `${row.date}T12:00:00`,
+          sourceName: 'Statement import',
+          sourceFileName: session.filename,
+          sourceRowNumber: row.rowNumber,
+          importBatchId: batchId,
+          importFingerprint: transactionFingerprint({ date: row.date, description: row.description, amount: row.amount, currency: row.currency, direction: row.direction, accountLabel }),
+          accountLabel,
+        };
+        FinanceTransaction.create({ id, domain_id: 'personal-finance', record_type: 'finance_transactions', contract_version: 2,
+          source_plugin_id: 'finance', external_id: id, occurred_at: payload.postedAt, payload_json: JSON.stringify(payload) });
+      }
+      Workflow.finishWorkflowRun(financeStatementWorkflowId, session.workflowRunId, receipt, null);
+    });
+    financeImportSessions.delete(importId);
+    return receipt;
+  } catch (error) {
+    Workflow.finishWorkflowRun(financeStatementWorkflowId, session.workflowRunId, { stage: 'failed', filename: session.filename }, error.message);
+    session.workflowRunId = Workflow.startWorkflowRun(financeStatementWorkflowId);
+    Workflow.updateWorkflowRunProgress(session.workflowRunId, { stage: 'preview_rows', filename: session.filename, validCount: session.preview.validCount });
+    throw error;
+  }
+}
+
+function cancelFinanceImportSession(importId, session) {
+  Workflow.finishWorkflowRun(financeStatementWorkflowId, session.workflowRunId, { stage: 'cancelled', filename: session.filename }, null, 'cancelled');
+  financeImportSessions.delete(importId);
+}
+
 function getPluginSetting(pluginId, stateKey) {
   const row = ApplicationRecord.query('SELECT value_json FROM plugin_state WHERE plugin_id = ? AND state_key = ?', pluginId, stateKey)[0];
   if (!row) return null;
@@ -243,8 +397,8 @@ function selectedCalendars(integrationId) {
 
 function workflowSummaries() {
   return ApplicationRecord.query(`SELECT w.id, w.plugin_id, w.integration_id, w.name, w.trigger_type, w.definition_json, w.enabled, w.next_run_at, w.last_run_at,
-      i.display_name AS integration_name, i.status AS integration_status
-    FROM workflows w LEFT JOIN integrations i ON i.id = w.integration_id ORDER BY w.created_at DESC`)
+      i.display_name AS integration_name, i.status AS integration_status, p.name AS plugin_name
+    FROM workflows w LEFT JOIN integrations i ON i.id = w.integration_id JOIN plugins p ON p.id = w.plugin_id ORDER BY w.created_at DESC`)
     .map((row) => ({ ...row, definition: JSON.parse(row.definition_json) }));
 }
 
@@ -377,7 +531,7 @@ async function executeGoogleCalendarWorkflow(workflowId) {
     const token = JSON.parse((await safeStorage.decryptStringAsync(Buffer.from(integration.secret_blob, 'base64'))).result);
     const calendars = selectedCalendars(integration.id);
     const result = await syncGoogleCalendar({
-      clientId: credentials.clientId, clientSecret: process.env.GOOGLE_CALENDAR_CLIENT_SECRET, token, integrationId: integration.id, calendars,
+      clientId: credentials.clientId, token, integrationId: integration.id, calendars,
       getSyncToken: (calendarId) => calendars.find((calendar) => calendar.id === calendarId)?.sync_token,
       saveSyncToken: saveCalendarCursor,
       importEvents: (id, events) => upsertCalendarEvents(id, 'google-calendar-connector', events),
@@ -463,6 +617,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ApplicationRecord.connect(openDatabase(app.getPath('userData')));
+  Workflow.cancelRunningRuns(financeStatementWorkflowId, 'The app restarted before this statement import was confirmed. No staged rows were committed.');
   registerIpcHandlers();
   startWorkflowScheduler();
   createWindow();
@@ -472,7 +627,10 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', () => ApplicationRecord.disconnect());
+app.on('before-quit', () => {
+  for (const [id, session] of financeImportSessions) cancelFinanceImportSession(id, session);
+  ApplicationRecord.disconnect();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

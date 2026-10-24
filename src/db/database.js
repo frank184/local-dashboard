@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const builtInPlugins = ['calendar', 'todos', 'health'].map((id) =>
+const builtInPlugins = ['calendar', 'todos', 'health', 'finance'].map((id) =>
   JSON.parse(fs.readFileSync(path.join(__dirname, '../plugins', id, 'manifest.json'), 'utf8')));
 const bundledIntegrations = ['google-calendar', 'outlook-calendar', 'fitbit'].map((id) =>
   JSON.parse(fs.readFileSync(path.join(__dirname, '../integrations', id, 'manifest.json'), 'utf8')));
@@ -247,6 +247,11 @@ function seedBuiltIns(db) {
     insertContract.run(id, domainId, JSON.stringify({ type: 'object', fields }));
   }
   db.prepare(`INSERT OR IGNORE INTO data_contracts (contract_id, version, domain_id, schema_json)
+    VALUES ('finance_transactions', 2, 'personal-finance', ?)`).run(JSON.stringify({ type: 'object', fields: {
+    amount: 'number', currency: 'string', direction: 'income-or-expense', merchant: 'string', category: 'string', postedAt: 'date-time',
+    sourceName: 'string', sourceFileName: 'string', sourceRowNumber: 'number', importBatchId: 'string', importFingerprint: 'sha256', accountLabel: 'string',
+  } }));
+  db.prepare(`INSERT OR IGNORE INTO data_contracts (contract_id, version, domain_id, schema_json)
     VALUES ('calendar_events', 2, 'personal-productivity', ?)`).run(JSON.stringify({ type: 'object', fields: {
     title: 'string', startAt: 'date-time-or-date', endAt: 'date-time-or-date', location: 'string', description: 'string', calendarId: 'string',
     calendarName: 'string', source: 'string', sourceName: 'string', sourceAccount: 'string', allDay: 'boolean', timezone: 'string',
@@ -254,6 +259,71 @@ function seedBuiltIns(db) {
   } }));
   const insertCalendarPlugin = db.prepare(`UPDATE plugins SET description = ?, icon = ? WHERE id = ? AND description = ''`);
   for (const plugin of builtInPlugins) insertCalendarPlugin.run(plugin.description, plugin.icon, plugin.id);
+
+  const financeSeedVersion = db.prepare("SELECT value FROM app_meta WHERE key = 'starter-finance-ledger-v1'").get();
+  if (!financeSeedVersion) {
+    const insertFinanceSample = db.prepare(`INSERT OR IGNORE INTO data_records
+      (id, domain_id, record_type, contract_version, source_plugin_id, external_id, occurred_at, payload_json)
+      VALUES (?, 'personal-finance', 'finance_transactions', 1, 'finance', ?, ?, ?)`);
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const merchants = [
+      ['Northstar Market', 'Groceries', -84.26], ['Maple & Rye', 'Dining', -28.40],
+      ['Metro Transit', 'Transport', -3.35], ['Juniper Coffee', 'Dining', -6.75],
+      ['Lakeside Pharmacy', 'Health', -18.90], ['Streamline', 'Subscriptions', -12.99],
+      ['Harbour Books', 'Shopping', -24.50], ['Pine Street Market', 'Groceries', -63.18],
+      ['Studio North', 'Home', -46.00], ['City Hydro', 'Bills', -74.62],
+      ['Corner Table', 'Dining', -41.35], ['Northstar Market', 'Groceries', -92.14],
+      ['Maple & Rye', 'Dining', -19.80], ['Monthly pay', 'Income', 3420.00],
+      ['Metro Transit', 'Transport', -3.35], ['Goodday Market', 'Groceries', -37.60],
+      ['Petal & Stem', 'Gifts', -21.00], ['Cloud Storage', 'Subscriptions', -3.49],
+      ['Bike repair', 'Transport', -58.00], ['Juniper Coffee', 'Dining', -5.80],
+      ['Pine Street Market', 'Groceries', -78.23], ['Neighbourhood Cinema', 'Leisure', -32.00],
+      ['Cellar Door', 'Dining', -54.70], ['Water bill', 'Bills', -39.16],
+      ['Northstar Market', 'Groceries', -52.43], ['Design project', 'Income', 460.00],
+      ['Maple & Rye', 'Dining', -34.20], ['Metro Transit', 'Transport', -3.35],
+      ['Home Supply Co.', 'Home', -86.45], ['Juniper Coffee', 'Dining', -7.10],
+      ['Goodday Market', 'Groceries', -44.95], ['Streamline', 'Subscriptions', -12.99],
+      ['River Park Market', 'Groceries', -71.38], ['Neighbourhood Books', 'Shopping', -18.25],
+      ['Monthly pay', 'Income', 3420.00], ['Corner Table', 'Dining', -25.60],
+      ['City Hydro', 'Bills', -68.30], ['Northstar Market', 'Groceries', -58.70],
+      ['Weekend train', 'Transport', -22.50], ['Petal & Stem', 'Gifts', -17.00],
+      ['Maple & Rye', 'Dining', -39.40], ['Pine Street Market', 'Groceries', -88.62],
+      ['Annual interest', 'Income', 14.82], ['Lakeside Pharmacy', 'Health', -12.40],
+      ['Cloud Storage', 'Subscriptions', -3.49], ['Home Supply Co.', 'Home', -33.90],
+      ['Juniper Coffee', 'Dining', -8.25], ['Goodday Market', 'Groceries', -48.72],
+      ['Studio North', 'Home', -52.00], ['Metro Transit', 'Transport', -3.35],
+      ['Corner Table', 'Dining', -31.65], ['Northstar Market', 'Groceries', -66.19],
+      ['Monthly pay', 'Income', 3420.00], ['River Park Market', 'Groceries', -39.80],
+      ['Streamline', 'Subscriptions', -12.99], ['Harbour Books', 'Shopping', -29.95],
+      ['Maple & Rye', 'Dining', -47.20], ['City Hydro', 'Bills', -71.05],
+      ['Pine Street Market', 'Groceries', -57.34], ['Metro Transit', 'Transport', -3.35],
+    ];
+    // Irregular spacing keeps the sample ledger believable without filling every day.
+    const gaps = [1, 2, 1, 4, 2, 3, 1, 5, 2, 2, 6, 1, 3, 2, 4];
+    let age = 0;
+    const dated = merchants.map((entry, index) => {
+      const date = new Date(today.getTime() - age * 86400000);
+      age += gaps[index % gaps.length];
+      return { entry, date };
+    }).reverse();
+    const categoryPlans = { Groceries: 620, Dining: 360, Transport: 180, Bills: 430, Home: 310, Subscriptions: 95, Health: 140, Shopping: 240, Leisure: 180, Gifts: 110 };
+    dated.forEach(({ entry: [merchant, category, amount], date }, index) => {
+      const day = localDayKey(date);
+      const payload = { amount: Number(Math.abs(amount).toFixed(2)), currency: 'CAD', direction: amount > 0 ? 'income' : 'expense', merchant, category, postedAt: `${day}T12:00:00`, sourceName: 'Local sample' };
+      if (index === 0) payload.categoryPlans = categoryPlans;
+      insertFinanceSample.run(`finance-demo-${String(index + 1).padStart(3, '0')}`, `sample-finance-${index + 1}`, `${day}T12:00:00`, JSON.stringify(payload));
+    });
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-finance-ledger-v1', '1')").run();
+  }
+  db.prepare(`INSERT OR IGNORE INTO workflows
+    (id, plugin_id, name, trigger_type, definition_json, enabled)
+    VALUES (?, 'finance', ?, 'manual', ?, 1)`).run(
+    'workflow-finance-statement-import',
+    'Import a bank statement',
+    JSON.stringify({ jobType: 'local_data_pipeline', providerId: 'finance-statement-csv', pipelineVersion: 1,
+      localOnly: true, stages: ['select_file', 'parse_csv', 'map_columns', 'preview_rows', 'normalize', 'deduplicate', 'commit_records'] }),
+  );
 
   // One-time calendar layout examples. These are ordinary local events so they
   // can be opened, edited, or deleted like any other starter event.

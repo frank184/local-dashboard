@@ -2,8 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const test = require('node:test');
-const { openDatabase } = require('../src/db/database');
+const { describe, it } = require('node:test');
+const { openDatabase } = require('../../src/db/database');
 const {
   ApplicationRecord,
   CalendarEvent,
@@ -13,9 +13,10 @@ const {
   Plugin,
   TodoTask,
   Workflow,
-} = require('../src/models');
+} = require('../../src/models');
 
-test('models preserve the existing query output and provide basic record behavior', (t) => {
+describe('Model backwards compatibility', () => {
+it('preserves legacy query results and basic record behavior', (t) => {
   const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'local-dashboard-models-'));
   const db = openDatabase(tempDirectory);
   ApplicationRecord.connect(db);
@@ -155,4 +156,5 @@ test('models preserve the existing query output and provide basic record behavio
   assert.ok(Integration.update(integrationId, { display_name: 'Calendar account', account_label: 'Personal Gmail' }));
   assert.equal(Integration.setIntegrationStatus(integrationId, 'paused'), true);
   assert.equal(Integration.removeIntegration(integrationId), true);
+});
 });
