@@ -282,10 +282,18 @@ function registerIpcHandlers() {
 }
 
 function integrationSummaries() {
-  return ApplicationRecord.query(`SELECT id, provider_id, display_name, account_label, status, plugin_id, sync_workflow_id, last_sync_at, config_json,
+  const integrations = ApplicationRecord.query(`SELECT id, provider_id, display_name, account_label, status, plugin_id, sync_workflow_id, last_sync_at, config_json,
     secret_blob IS NOT NULL AS has_credentials,
     (SELECT COUNT(*) FROM integration_calendars c WHERE c.integration_id = integrations.id AND c.selected = 1) AS selected_calendar_count
     FROM integrations ORDER BY display_name, account_label`);
+  const calendarsByIntegration = new Map();
+  for (const calendar of ApplicationRecord.query(`SELECT id, integration_id, external_calendar_id, summary, display_label, color, selected
+    FROM integration_calendars ORDER BY summary`)) {
+    const calendars = calendarsByIntegration.get(calendar.integration_id) || [];
+    calendars.push(calendar);
+    calendarsByIntegration.set(calendar.integration_id, calendars);
+  }
+  return integrations.map((integration) => ({ ...integration, calendars: calendarsByIntegration.get(integration.id) || [] }));
 }
 
 function latestFinanceImportRun() {

@@ -134,6 +134,7 @@ let calendarMonthWheelReset = null;
 let calendarMonthWheelLockedUntil = 0;
 const calendarSourceVisibility = {};
 const calendarIntegrationGroups = new Map();
+const calendarVisibilityGroups = new Map();
 let calendarView = 'week';
 let calendarEvents = [];
 let calendarSettings = { startHour: 0, endHour: 24 };
@@ -1029,20 +1030,25 @@ function renderCalendarBoard(events) {
   const period = pageRoot.querySelector('.calendar-period');
   const monthTitle = pageRoot.querySelector('#calendar-month-title');
   if (monthTitle) monthTitle.textContent = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(calendarDate);
+  const filteredEvents = events.filter((event) => {
+    const sourceId = event.integration_id || 'local';
+    const visibilityKey = calendarIntegrationGroups.get(sourceId) || sourceId;
+    const calendarVisibilityKey = event.calendarId
+      ? calendarVisibilityGroups.get(`${sourceId}:${event.calendarId}`)
+      : null;
+    const matchesSource = calendarVisibilityKey
+      ? calendarSourceVisibility[calendarVisibilityKey] !== false
+      : calendarSourceVisibility[visibilityKey] !== false;
+    const matchesSearch = !calendarSearch || `${event.title || ''} ${event.location || ''} ${event.sourceName || event.source || ''}`.toLowerCase().includes(calendarSearch);
+    return matchesSource && matchesSearch;
+  });
   const seenOutlookEvents = new Set();
-  const uniqueEvents = events.filter((event) => {
+  const visibleEvents = filteredEvents.filter((event) => {
     if (event.source_plugin_id !== 'outlook-calendar-connector' || !event.integration_id || !event.iCalUID) return true;
     const key = `${calendarIntegrationGroups.get(event.integration_id) || event.integration_id}:${event.iCalUID}`;
     if (seenOutlookEvents.has(key)) return false;
     seenOutlookEvents.add(key);
     return true;
-  });
-  const visibleEvents = uniqueEvents.filter((event) => {
-    const sourceId = event.integration_id || 'local';
-    const visibilityKey = calendarIntegrationGroups.get(sourceId) || sourceId;
-    const matchesSource = calendarSourceVisibility[visibilityKey] !== false;
-    const matchesSearch = !calendarSearch || `${event.title || ''} ${event.location || ''} ${event.sourceName || event.source || ''}`.toLowerCase().includes(calendarSearch);
-    return matchesSource && matchesSearch;
   });
   renderCalendarMiniMonth();
   renderCalendarUpcoming(visibleEvents);
@@ -1204,6 +1210,7 @@ function renderCalendarIntegrations(integrations) {
   if (!summary) return;
   summary.replaceChildren();
   calendarIntegrationGroups.clear();
+  calendarVisibilityGroups.clear();
   const calendarConnections = integrations.filter((item) => item.provider_id.includes('calendar'));
   const groupedConnections = new Map();
   for (const integration of calendarConnections) {
@@ -1217,17 +1224,55 @@ function renderCalendarIntegrations(integrations) {
   }
   for (const [groupKey, group] of groupedConnections) {
     const integration = group[0];
+    const account = document.createElement('div'); account.className = 'calendar-account-group';
     const row = document.createElement('label'); row.className = 'calendar-account-line';
     const toggle = document.createElement('input'); toggle.className = 'calendar-visibility-toggle'; toggle.type = 'checkbox'; toggle.dataset.calendarSource = groupKey;
-    toggle.checked = calendarSourceVisibility[groupKey] !== false;
+    const childCalendars = new Map();
+    for (const connection of group) {
+      for (const calendar of connection.calendars || []) {
+        if (!calendar.selected) continue;
+        const childKey = `${groupKey}:calendar:${calendar.external_calendar_id}`;
+        calendarVisibilityGroups.set(`${connection.id}:${calendar.external_calendar_id}`, childKey);
+        if (!childCalendars.has(childKey)) childCalendars.set(childKey, calendar);
+      }
+    }
+    const childKeys = [...childCalendars.keys()];
+    const childVisibility = childKeys.map((key) => calendarSourceVisibility[key] !== false);
+    toggle.checked = childVisibility.length ? childVisibility.every(Boolean) : calendarSourceVisibility[groupKey] !== false;
+    toggle.indeterminate = childVisibility.some(Boolean) && childVisibility.some((visible) => !visible);
     const check = document.createElement('span'); check.className = `calendar-check ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
     const name = document.createElement('span'); name.className = 'calendar-account-name';
     const accountName = integration.account_label || (integration.provider_id === 'google-calendar' ? 'Google Calendar' : 'Outlook Calendar');
     name.textContent = accountName;
     if (group.length > 1) name.title = `${accountName} (${group.length} connections)`;
     const color = document.createElement('span'); color.className = `calendar-color-dot ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
-    row.append(toggle, check, name, color); summary.append(row);
-    toggle.addEventListener('change', () => { calendarSourceVisibility[groupKey] = toggle.checked; renderCalendarBoard(calendarEvents); });
+    row.append(toggle, check, name, color); account.append(row);
+    for (const [childKey, calendar] of childCalendars) {
+      const calendarRow = document.createElement('label'); calendarRow.className = 'calendar-account-line calendar-child-line';
+      const calendarToggle = document.createElement('input'); calendarToggle.className = 'calendar-visibility-toggle'; calendarToggle.type = 'checkbox'; calendarToggle.dataset.calendarSource = childKey;
+      calendarToggle.checked = calendarSourceVisibility[childKey] !== false;
+      const calendarCheck = document.createElement('span'); calendarCheck.className = `calendar-check ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
+      const calendarName = document.createElement('span'); calendarName.className = 'calendar-account-name'; calendarName.textContent = calendar.display_label || calendar.summary;
+      calendarName.title = calendar.display_label || calendar.summary;
+      const calendarColor = document.createElement('span'); calendarColor.className = `calendar-color-dot ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
+      calendarRow.append(calendarToggle, calendarCheck, calendarName, calendarColor); account.append(calendarRow);
+      calendarToggle.addEventListener('change', () => {
+        calendarSourceVisibility[childKey] = calendarToggle.checked;
+        const visible = childKeys.map((key) => calendarSourceVisibility[key] !== false);
+        toggle.checked = visible.length ? visible.every(Boolean) : calendarSourceVisibility[groupKey] !== false;
+        toggle.indeterminate = visible.some(Boolean) && visible.some((value) => !value);
+        renderCalendarBoard(calendarEvents);
+      });
+    }
+    summary.append(account);
+    toggle.addEventListener('change', () => {
+      if (childKeys.length) {
+        for (const childKey of childKeys) calendarSourceVisibility[childKey] = toggle.checked;
+      } else calendarSourceVisibility[groupKey] = toggle.checked;
+      toggle.indeterminate = false;
+      for (const calendarToggle of account.querySelectorAll('.calendar-child-line .calendar-visibility-toggle')) calendarToggle.checked = toggle.checked;
+      renderCalendarBoard(calendarEvents);
+    });
   }
   if (!calendarConnections.length) {
     const empty = document.createElement('p'); empty.className = 'calendar-no-accounts'; empty.textContent = 'Connect calendars to see them here.'; summary.append(empty);
