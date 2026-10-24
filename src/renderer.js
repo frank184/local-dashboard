@@ -591,10 +591,6 @@ function renderPlugins(plugins) {
         menu.hidden = !menu.hidden;
       });
       menu.append(menuAction('Edit details', 'pencil', () => showPluginForm(plugin)));
-      menu.append(menuAction(plugin.enabled ? 'Disable' : 'Enable', plugin.enabled ? 'toggle-left' : 'toggle-right', async () => {
-        await window.dashboard.savePlugin({ ...plugin, domainId: plugin.domain_id, enabled: !plugin.enabled });
-        await refreshPluginData();
-      }));
       menu.append(menuAction('Delete plugin', 'trash-2', async () => {
         menu.hidden = true;
         const accepted = await showConfirm(`Delete ${plugin.name}?`, 'This uninstalls the plugin and removes it from navigation. Its local records will be kept.', 'Delete plugin');
@@ -619,12 +615,31 @@ function renderPlugins(plugins) {
     description.textContent = plugin.description || 'A built-in workspace capability.';
     const footer = document.createElement('div');
     footer.className = 'plugin-list-footer';
-    const status = document.createElement('span');
-    status.className = `badge ${plugin.installed && plugin.enabled ? 'badge-success' : 'badge-neutral'}`;
-    status.innerHTML = `<i></i>${plugin.installed ? (plugin.enabled ? 'Enabled' : 'Disabled') : 'Not installed'}`;
-    const kind = document.createElement('span');
-    kind.textContent = plugin.kind;
-    footer.append(status, kind);
+    if (plugin.installed) {
+      const toggle = document.createElement('button');
+      toggle.className = `plugin-enable-toggle${plugin.enabled ? ' is-enabled' : ''}`;
+      toggle.type = 'button';
+      toggle.setAttribute('role', 'switch');
+      toggle.setAttribute('aria-checked', String(Boolean(plugin.enabled)));
+      toggle.setAttribute('aria-label', `${plugin.enabled ? 'Disable' : 'Enable'} ${plugin.name}`);
+      const track = document.createElement('span'); track.className = 'plugin-toggle-track';
+      const thumb = document.createElement('span'); thumb.className = 'plugin-toggle-thumb'; track.append(thumb);
+      const label = document.createElement('span'); label.textContent = plugin.enabled ? 'Enabled' : 'Disabled';
+      toggle.append(track, label);
+      toggle.addEventListener('click', async () => {
+        toggle.disabled = true;
+        try {
+          await window.dashboard.savePlugin({ ...plugin, domainId: plugin.domain_id, enabled: !plugin.enabled });
+          await refreshPluginData();
+        } catch (error) { window.alert(error.message); toggle.disabled = false; }
+      });
+      footer.append(toggle);
+    } else {
+      const notInstalled = document.createElement('span');
+      notInstalled.className = 'badge badge-neutral';
+      notInstalled.innerHTML = '<i></i>Not installed';
+      footer.append(notInstalled);
+    }
     card.append(top, description, footer);
     list.append(card);
   }
@@ -1673,6 +1688,13 @@ function renderFinance(allRecords, lastImportRun = financeLastImportRun) {
 
   const categoryTotals = new Map();
   for (const record of expenses) categoryTotals.set(record.category || 'Other', (categoryTotals.get(record.category || 'Other') || 0) + Number(record.amount || 0));
+  const topCategory = [...categoryTotals.entries()].sort((a, b) => b[1] - a[1])[0];
+  pageRoot.querySelector('#finance-ledger-entry-count').textContent = String(monthRecords.length);
+  pageRoot.querySelector('#finance-ledger-entry-note').textContent = `${expenses.length} outflow${expenses.length === 1 ? '' : 's'} · ${income ? 'income also included' : 'no income recorded'}`;
+  pageRoot.querySelector('#finance-ledger-daily-spend').textContent = financeCurrency(spending / Math.max(1, now.getDate()), currency);
+  pageRoot.querySelector('#finance-ledger-daily-note').textContent = `Across ${now.getDate()} day${now.getDate() === 1 ? '' : 's'} this month`;
+  pageRoot.querySelector('#finance-ledger-top-category').textContent = topCategory?.[0] || '—';
+  pageRoot.querySelector('#finance-ledger-top-note').textContent = topCategory ? `${financeCurrency(topCategory[1], currency)} spent this month` : 'No spending recorded yet';
   const categoryRoot = pageRoot.querySelector('#finance-category-list');
   categoryRoot.replaceChildren();
   const categoryNames = hasPlan ? [...new Set([...Object.keys(financePlans), ...categoryTotals.keys()])] : [...categoryTotals.keys()];

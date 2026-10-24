@@ -1574,12 +1574,58 @@ main, .content, #page-root, .page-view { min-width: 0; }
 @media (min-width: 1800px) { .integration-connection-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 .workflow-actions { align-items: center; gap: 4px; }
+.workflow-config-table th:last-child { width: 17%; }
+.workflow-actions { flex-wrap: nowrap; justify-content: center; gap: 3px; }
 .workflow-icon-action { display: grid; place-items: center; flex: 0 0 29px; width: 29px; height: 29px; border: 1px solid transparent; border-radius: 6px; color: var(--color-primary); background: transparent; cursor: pointer; }
 .workflow-icon-action:hover:not(:disabled) { border-color: var(--color-border); background: var(--color-canvas); }
 .workflow-icon-action.is-muted { color: var(--color-muted); }
 .workflow-icon-action .icon { width: 14px; height: 14px; }
 .workflow-icon-action:disabled { opacity: .5; cursor: not-allowed; }
 .workflow-icon-action:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+@media (max-width: 1120px) {
+  .workflow-config-table th:last-child { width: 68px; }
+  .workflow-config-table td, .workflow-config-table tbody th { padding-top: 13px; padding-bottom: 13px; }
+  .workflow-config-table td:last-child { padding-right: 4px; padding-left: 4px; }
+  .workflow-actions { flex-direction: column; align-items: flex-end; gap: 0; }
+}
+@media (min-width: 1121px) {
+  .workflow-config-table th:nth-child(3) { width: 23%; }
+  .workflow-config-table th:last-child { width: 17%; }
+}
+
+/* Plugin cards share the integrations grid, with their primary state control in the footer. */
+.plugin-list-card { display: grid; grid-template-rows: auto 1fr auto; min-height: 188px; padding: 16px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.plugin-list-card-top { min-width: 0; }
+.plugin-list-card .plugin-card-identity { min-width: 0; }
+.plugin-list-card .plugin-card-identity > div { min-width: 0; }
+.plugin-list-card .plugin-card-identity h3 { overflow-wrap: anywhere; }
+.plugin-list-description { min-height: 0; margin: 14px 0; }
+.plugin-list-footer { align-items: center; min-height: 41px; padding-top: 9px; border-top: 1px solid var(--color-border); }
+.plugin-enable-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0; border: 0; color: var(--color-muted); background: transparent; font: inherit; font-size: 9px; font-weight: 550; cursor: pointer; }
+.plugin-enable-toggle.is-enabled { color: var(--color-primary); }
+.plugin-enable-toggle:disabled { opacity: .55; cursor: wait; }
+.plugin-enable-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; border-radius: 4px; }
+.plugin-toggle-track { position: relative; display: block; width: 30px; height: 17px; border: 1px solid var(--color-border); border-radius: 99px; background: var(--color-canvas); transition: background-color .16s ease, border-color .16s ease; }
+.plugin-enable-toggle.is-enabled .plugin-toggle-track { border-color: var(--color-primary); background: var(--color-primary); }
+.plugin-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--color-surface); box-shadow: 0 1px 2px rgba(0,0,0,.18); transition: transform .16s ease; }
+.plugin-enable-toggle.is-enabled .plugin-toggle-thumb { transform: translateX(13px); }
+
+.finance-ledger-glance { margin-top: 8px; padding: 18px 0 17px; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.finance-ledger-glance > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.finance-ledger-glance h2 { margin: 0 0 5px; font-size: 14px; }
+.finance-ledger-glance header p { margin: 0; color: var(--color-muted); font-size: 10px; }
+.finance-ledger-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 15px; }
+.finance-ledger-metrics article { display: grid; gap: 5px; min-width: 0; padding: 0 18px; border-left: 1px solid var(--color-border); }
+.finance-ledger-metrics article:first-child { padding-left: 0; border-left: 0; }
+.finance-ledger-metrics article:last-child { padding-right: 0; }
+.finance-ledger-metrics article > span { color: var(--color-muted); font-size: 10px; }
+.finance-ledger-metrics article > strong { overflow: hidden; color: var(--color-text); font-size: 16px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.finance-ledger-metrics article > small { overflow: hidden; color: var(--color-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) {
+  .finance-ledger-metrics article { padding-right: 8px; padding-left: 8px; }
+  .finance-ledger-metrics article > strong { font-size: 13px; }
+  .finance-ledger-metrics article > small { white-space: normal; }
+}
 
 .finance-import-strip { display: flex; align-items: center; gap: 11px; margin: 0 0 3px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
 .finance-import-strip > .icon { width: 16px; height: 16px; color: var(--color-primary); }
