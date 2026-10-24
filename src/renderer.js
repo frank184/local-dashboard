@@ -469,6 +469,40 @@ function normalizeCalendarSettings(settings) {
   return { startHour, endHour };
 }
 
+function calendarEventIdentity(event) {
+  const uid = String(event.iCalUID || '').trim().toLowerCase();
+  const normalize = (value, allDay) => {
+    if (!value) return '';
+    const text = String(value);
+    if (allDay || /^\d{4}-\d{2}-\d{2}$/.test(text)) return text.slice(0, 10);
+    const time = new Date(text).getTime();
+    return Number.isFinite(time) ? new Date(time).toISOString() : text.toLowerCase();
+  };
+  const startAt = event.startAt || event.occurred_at;
+  const allDay = Boolean(event.allDay) || /^\d{4}-\d{2}-\d{2}$/.test(String(startAt || ''));
+  const title = String(event.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!title || !startAt) return { uid, base: '', endAt: '' };
+  const base = JSON.stringify([title, normalize(startAt, allDay), String(event.location || '').trim().toLowerCase(), allDay]);
+  return { uid, base, endAt: normalize(event.endAt, allDay) };
+}
+
+function hasCalendarEventMatch(event, identitiesByUid, identitiesByBase) {
+  const identity = calendarEventIdentity(event);
+  if (identity.uid && identitiesByUid.has(identity.uid)) return true;
+  return Boolean(identity.base && (identitiesByBase.get(identity.base) || []).some((candidate) =>
+    !identity.endAt || !candidate.endAt || identity.endAt === candidate.endAt));
+}
+
+function addCalendarEventIdentity(event, identitiesByUid, identitiesByBase) {
+  const identity = calendarEventIdentity(event);
+  if (identity.uid) identitiesByUid.add(identity.uid);
+  if (identity.base) {
+    const identities = identitiesByBase.get(identity.base) || [];
+    identities.push(identity);
+    identitiesByBase.set(identity.base, identities);
+  }
+}
+
 async function hydratePage(pageId) {
   if (pageId === 'plugins/calendar/settings' || pageId === 'plugins/health/settings') return;
   if (!['plugins', 'integrations', 'workflows', 'calendar', 'todos', 'health', 'finance'].includes(pageId)) return;
@@ -1030,7 +1064,21 @@ function renderCalendarBoard(events) {
   const period = pageRoot.querySelector('.calendar-period');
   const monthTitle = pageRoot.querySelector('#calendar-month-title');
   if (monthTitle) monthTitle.textContent = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(calendarDate);
-  const filteredEvents = events.filter((event) => {
+  const linkedEvents = events.filter((event) => event.integration_id && ['google-calendar-connector', 'outlook-calendar-connector'].includes(event.source_plugin_id));
+  const unlinkedEvents = events.filter((event) => !event.integration_id).sort((left, right) =>
+    Number(right.source_plugin_id === 'calendar') - Number(left.source_plugin_id === 'calendar'));
+  const linkedUids = new Set();
+  const linkedBases = new Map();
+  for (const event of linkedEvents) addCalendarEventIdentity(event, linkedUids, linkedBases);
+  // An imported copy owns a matching event while its connection exists. Keep
+  // the local row available as a fallback, but do not show it beside or instead
+  // of a hidden connected copy.
+  const ownedEvents = [
+    ...linkedEvents,
+    ...unlinkedEvents.filter((event) => !hasCalendarEventMatch(event, linkedUids, linkedBases)),
+    ...events.filter((event) => event.integration_id && !['google-calendar-connector', 'outlook-calendar-connector'].includes(event.source_plugin_id)),
+  ];
+  const filteredEvents = ownedEvents.filter((event) => {
     const sourceId = event.integration_id || 'local';
     const visibilityKey = calendarIntegrationGroups.get(sourceId) || sourceId;
     const calendarVisibilityKey = event.calendarId
@@ -1042,14 +1090,15 @@ function renderCalendarBoard(events) {
     const matchesSearch = !calendarSearch || `${event.title || ''} ${event.location || ''} ${event.sourceName || event.source || ''}`.toLowerCase().includes(calendarSearch);
     return matchesSource && matchesSearch;
   });
-  const seenOutlookEvents = new Set();
-  const visibleEvents = filteredEvents.filter((event) => {
-    if (event.source_plugin_id !== 'outlook-calendar-connector' || !event.integration_id || !event.iCalUID) return true;
-    const key = `${calendarIntegrationGroups.get(event.integration_id) || event.integration_id}:${event.iCalUID}`;
-    if (seenOutlookEvents.has(key)) return false;
-    seenOutlookEvents.add(key);
-    return true;
-  });
+  const uniqueEvents = [];
+  const seenUids = new Set();
+  const seenBases = new Map();
+  for (const event of filteredEvents) {
+    if (hasCalendarEventMatch(event, seenUids, seenBases)) continue;
+    uniqueEvents.push(event);
+    addCalendarEventIdentity(event, seenUids, seenBases);
+  }
+  const visibleEvents = uniqueEvents;
   renderCalendarMiniMonth();
   renderCalendarUpcoming(visibleEvents);
   const weekStart = calendarWeekStart(calendarDate);
