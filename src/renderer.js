@@ -1289,22 +1289,18 @@ function renderCalendarIntegrations(integrations) {
     const childVisibility = childKeys.map((key) => calendarSourceVisibility[key] !== false);
     toggle.checked = childVisibility.length ? childVisibility.every(Boolean) : calendarSourceVisibility[groupKey] !== false;
     toggle.indeterminate = childVisibility.some(Boolean) && childVisibility.some((visible) => !visible);
-    const check = document.createElement('span'); check.className = `calendar-check ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
     const name = document.createElement('span'); name.className = 'calendar-account-name';
     const accountName = integration.account_label || (integration.provider_id === 'google-calendar' ? 'Google Calendar' : 'Outlook Calendar');
     name.textContent = accountName;
     if (group.length > 1) name.title = `${accountName} (${group.length} connections)`;
-    const color = document.createElement('span'); color.className = `calendar-color-dot ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
-    row.append(toggle, check, name, color); account.append(row);
+    row.append(toggle, name); account.append(row);
     for (const [childKey, calendar] of childCalendars) {
       const calendarRow = document.createElement('label'); calendarRow.className = 'calendar-account-line calendar-child-line';
       const calendarToggle = document.createElement('input'); calendarToggle.className = 'calendar-visibility-toggle'; calendarToggle.type = 'checkbox'; calendarToggle.dataset.calendarSource = childKey;
       calendarToggle.checked = calendarSourceVisibility[childKey] !== false;
-      const calendarCheck = document.createElement('span'); calendarCheck.className = `calendar-check ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
       const calendarName = document.createElement('span'); calendarName.className = 'calendar-account-name'; calendarName.textContent = calendar.display_label || calendar.summary;
       calendarName.title = calendar.display_label || calendar.summary;
-      const calendarColor = document.createElement('span'); calendarColor.className = `calendar-color-dot ${integration.provider_id === 'google-calendar' ? 'google' : 'outlook'}`;
-      calendarRow.append(calendarToggle, calendarCheck, calendarName, calendarColor); account.append(calendarRow);
+      calendarRow.append(calendarToggle, calendarName); account.append(calendarRow);
       calendarToggle.addEventListener('change', () => {
         calendarSourceVisibility[childKey] = calendarToggle.checked;
         const visible = childKeys.map((key) => calendarSourceVisibility[key] !== false);
