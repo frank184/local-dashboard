@@ -6,7 +6,7 @@
   "domainId": "personal-finance",
   "kind": "feature",
   "description": "A private view of spending, cash flow, and transactions.",
-  "icon": "wallet",
+  "icon": "landmark",
   "navigation": { "section": "Personal", "order": 25 },
   "ui": { "page": "page.html", "contributes": ["navigation", "page"] },
   "data": { "reads": ["finance_transactions"], "writes": ["finance_transactions"] }

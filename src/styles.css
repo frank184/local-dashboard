@@ -754,7 +754,6 @@ body.is-workflows-page.is-workflow-sidepanel-collapsed { --workflow-rail-width: 
 :root[data-theme="dark"] .calendar-month-grid,
 :root[data-theme="dark"] .todo-list,
 :root[data-theme="dark"] .plugin-list-card,
-:root[data-theme="dark"] .finance-import-pipeline,
 :root[data-theme="dark"] .integration-provider-card,
 :root[data-theme="dark"] .integration-connection-card,
 :root[data-theme="dark"] .table-container {
@@ -1378,17 +1377,6 @@ body:not(.is-calendar-page) { overflow-x: clip; }
 #finance-ledger-badge[hidden], .finance-clear-samples[hidden], .finance-table-scroll[hidden] { display: none; }
 .finance-currency-control { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 9px; }
 .finance-currency-control select { min-width: 70px; padding: 5px 7px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); background: var(--color-surface); font-size: 9px; }
-.finance-import-pipeline { margin-top: 18px; padding: 15px 17px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); }
-.finance-import-pipeline-copy { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.finance-import-pipeline-copy .eyebrow { margin: 0 0 5px; font-size: 8px; }
-.finance-import-pipeline-copy h2 { margin: 0 0 4px; font-size: 13px; }
-.finance-import-pipeline-copy p { margin: 0; color: var(--color-muted); font-size: 9px; line-height: 1.5; }
-.finance-import-pipeline-copy > .badge { flex: 0 0 auto; margin-top: 4px; font-size: 8px; }
-.finance-import-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
-.finance-import-stages li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 2px 7px; min-width: 0; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-canvas); }
-.finance-import-stages li > span { grid-row: span 2; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; color: var(--color-primary); background: var(--color-primary-soft); font-size: 8px; font-weight: 650; }
-.finance-import-stages strong { overflow: hidden; font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.finance-import-stages small { overflow: hidden; color: var(--color-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .finance-import-dialog { width: min(560px, calc(100vw - 28px)); }
 .finance-import-dialog.is-wide { width: min(940px, calc(100vw - 28px)); }
 .finance-import-dialog .finance-import-dialog-content { max-height: min(68vh, 620px); overflow: auto; padding: 15px 19px 18px; }
@@ -1492,6 +1480,7 @@ body:not(.is-calendar-page) { overflow-x: clip; }
 .finance-amount { font-weight: 560; }
 .finance-amount.is-income { color: var(--color-success); }
 .finance-empty-state { display: grid; justify-items: center; gap: 7px; padding: 35px 12px; color: var(--color-muted); font-size: 10px; }
+.finance-empty-state[hidden] { display: none; }
 .finance-empty-state strong { color: var(--color-text); font-size: 12px; }
 .finance-data-note { display: flex; align-items: center; gap: 7px; margin: 13px 0 0; color: var(--color-muted); font-size: 9px; line-height: 1.5; }
 .finance-data-note .icon { width: 13px; height: 13px; flex: 0 0 auto; }
@@ -1512,7 +1501,6 @@ body:not(.is-calendar-page) { overflow-x: clip; }
   .finance-table td:first-child { width: auto; }
   .finance-source-label { white-space: normal; text-align: right; }
   .finance-period-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-  .finance-import-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-mapping-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-mapping-extras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-import-dialog .finance-import-dialog-content { padding: 12px; }
@@ -1564,6 +1552,46 @@ main, .content, #page-root, .page-view { min-width: 0; }
   .workflow-card,
   .workflow-run-row,
   .integration-connection-card { min-width: 0; }
+}
+
+/* Dense connection cards mirror the available integration cards. */
+.integration-connection-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.integration-connection-card { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: start; gap: 12px; min-height: 188px; padding: 16px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.integration-connection-head { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: start; gap: 11px; min-width: 0; }
+.integration-connection-copy { min-width: 0; gap: 4px; }
+.integration-connection-copy strong { font-size: 12px; }
+.integration-connection-copy small { overflow-wrap: anywhere; line-height: 1.4; }
+.integration-connection-head > .badge { margin-top: 2px; white-space: nowrap; }
+.integration-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: auto; padding-top: 9px; border-top: 1px solid var(--color-border); }
+.integration-row-actions .integration-action { flex: 0 0 29px; width: 29px; height: 29px; color: var(--color-muted); }
+.integration-row-actions .integration-action:hover { color: var(--color-primary); }
+.integration-row-actions .integration-action-danger { color: var(--color-danger); }
+.integration-row-actions .integration-action-danger:hover { color: var(--color-danger); background: var(--color-danger-soft); }
+.integration-row-actions .integration-action:disabled { opacity: .5; cursor: wait; }
+.integration-empty { grid-column: 1 / -1; }
+@media (max-width: 760px) { .integration-connection-grid { grid-template-columns: 1fr; } }
+@media (min-width: 1400px) { .integration-connection-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1800px) { .integration-connection-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.workflow-actions { align-items: center; gap: 4px; }
+.workflow-icon-action { display: grid; place-items: center; flex: 0 0 29px; width: 29px; height: 29px; border: 1px solid transparent; border-radius: 6px; color: var(--color-primary); background: transparent; cursor: pointer; }
+.workflow-icon-action:hover:not(:disabled) { border-color: var(--color-border); background: var(--color-canvas); }
+.workflow-icon-action.is-muted { color: var(--color-muted); }
+.workflow-icon-action .icon { width: 14px; height: 14px; }
+.workflow-icon-action:disabled { opacity: .5; cursor: not-allowed; }
+.workflow-icon-action:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.finance-import-strip { display: flex; align-items: center; gap: 11px; margin: 0 0 3px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.finance-import-strip > .icon { width: 16px; height: 16px; color: var(--color-primary); }
+.finance-import-strip-copy { display: grid; gap: 3px; min-width: 0; margin-right: auto; }
+.finance-import-strip-copy strong { font-size: 10px; font-weight: 600; }
+.finance-import-strip-copy small { overflow: hidden; max-width: min(560px, 65vw); color: var(--color-muted); font-size: 9px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) {
+  .finance-import-strip { gap: 8px; }
+  .finance-import-strip-copy small { max-width: 52vw; }
+  .integration-connection-head { grid-template-columns: 38px minmax(0, 1fr); }
+  .integration-connection-head > .badge { grid-column: 2; justify-self: start; }
+  .integration-row-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 360px) {

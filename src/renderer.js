@@ -20,14 +20,20 @@ import {
   HeartPulse,
   Info,
   LayoutDashboard,
+  Landmark,
   ListTodo,
   Moon,
   MoreHorizontal,
+  Pause,
   Palette,
   Plus,
   Pencil,
+  Play,
+  RefreshCw,
   Scale,
   Settings,
+  Settings2,
+  KeyRound,
   Sparkles,
   Sun,
   Trash2,
@@ -72,11 +78,16 @@ const iconSet = {
   ListTodo,
   Moon,
   MoreHorizontal,
+  Pause,
   Palette,
   Plus,
   Pencil,
+  Play,
+  RefreshCw,
   Scale,
   Settings,
+  Settings2,
+  KeyRound,
   Sparkles,
   Sun,
   Trash2,
@@ -765,6 +776,7 @@ function renderIntegrations(integrations) {
     const row = document.createElement('article'); row.className = 'integration-connection-card';
     const provider = providers.find((item) => item.id === integration.provider_id) || { icon: 'cable', category: 'Service' };
     const iconWrap = makeIntegrationMark(provider);
+    const head = document.createElement('div'); head.className = 'integration-connection-head';
     const copy = document.createElement('div'); copy.className = 'integration-connection-copy';
     const name = document.createElement('strong'); name.textContent = integration.display_name;
     const account = document.createElement('small'); account.textContent = integration.account_label || 'Account label not set';
@@ -772,41 +784,39 @@ function renderIntegrations(integrations) {
     if (integration.last_sync_at) { const lastSync = document.createElement('small'); lastSync.textContent = `Last synced ${new Date(`${integration.last_sync_at}Z`).toLocaleString()}`; copy.append(lastSync); }
     const status = document.createElement('span'); status.className = `badge ${integration.status === 'connected' ? 'badge-success' : integration.status === 'error' ? 'badge-warning' : 'badge-neutral'}`;
     status.innerHTML = `<i></i>${integration.status === 'connected' ? 'Connected' : integration.status === 'paused' ? 'Paused' : integration.status === 'error' ? 'Sync error' : 'Setup required'}`;
+    head.append(iconWrap, copy, status);
     const edit = integrationAction('Edit connection', 'pencil', async () => { await showIntegrationEditForm(integration); });
-    const toggle = integrationAction(integration.status === 'paused' ? 'Resume connection' : 'Pause connection', integration.status === 'paused' ? 'play' : 'pause', async () => {
+    const toggle = integrationAction(integration.status === 'paused' ? 'Resume sync' : 'Pause sync', integration.status === 'paused' ? 'play' : 'pause', async () => {
       await window.dashboard.setIntegrationStatus(integration.id, integration.status === 'paused' ? 'connected' : 'paused');
       const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations);
-    });
+    }, integration.status === 'paused' ? 'Resume automatic sync.' : 'Pause automatic sync; the account stays connected.');
     toggle.disabled = !['connected', 'error', 'paused'].includes(integration.status);
     const remove = integrationAction('Remove connection', 'unplug', async () => {
       if (await showConfirm(`Remove ${integration.display_name}?`, 'This removes its local credentials and workflow. Imported records are kept.', 'Remove connection')) {
         await window.dashboard.removeIntegration(integration.id); const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations);
       }
-    });
-    let syncButton = null;
+    }, 'Remove local credentials and stop sync; imported records stay.');
+    let syncAction = null;
+    let manageCalendarsAction = null;
     if (integration.provider_id === 'fitbit' && integration.has_credentials && ['connected', 'error'].includes(integration.status)) {
-      syncButton = document.createElement('button'); syncButton.type = 'button'; syncButton.className = 'button button-secondary button-small'; syncButton.textContent = 'Sync now';
-      syncButton.addEventListener('click', async () => { syncButton.disabled = true; syncButton.textContent = 'Syncing…'; try { await window.dashboard.syncFitbit(integration.id); } catch (error) { window.alert(error.message); } finally { const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations); } });
+      syncAction = integrationAction('Sync now', 'refresh-cw', async () => { syncAction.disabled = true; syncAction.title = 'Syncing…'; try { await window.dashboard.syncFitbit(integration.id); } catch (error) { window.alert(error.message); } finally { const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations); } });
     }
     if (['google-calendar', 'outlook-calendar'].includes(integration.provider_id) && integration.has_credentials) {
-      const manageCalendars = document.createElement('button'); manageCalendars.type = 'button'; manageCalendars.className = 'button button-secondary button-small'; manageCalendars.textContent = 'Calendars';
-      manageCalendars.addEventListener('click', () => showIntegrationCalendarsForm(integration));
-      const syncGoogle = document.createElement('button'); syncGoogle.type = 'button'; syncGoogle.className = 'button button-secondary button-small'; syncGoogle.textContent = 'Sync now';
-      syncGoogle.addEventListener('click', async () => { syncGoogle.disabled = true; syncGoogle.textContent = 'Syncing…'; try { if (integration.provider_id === 'google-calendar') await window.dashboard.syncGoogleCalendar(integration.id); else await window.dashboard.syncOutlookCalendar(integration.id); } catch (error) { window.alert(error.message); } finally { const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations); } });
-      syncButton = document.createElement('span'); syncButton.className = 'integration-google-actions'; syncButton.append(manageCalendars, syncGoogle);
+      manageCalendarsAction = integrationAction('Manage calendars', 'calendar-days', () => showIntegrationCalendarsForm(integration));
+      syncAction = integrationAction('Sync now', 'refresh-cw', async () => { syncAction.disabled = true; syncAction.title = 'Syncing…'; try { if (integration.provider_id === 'google-calendar') await window.dashboard.syncGoogleCalendar(integration.id); else await window.dashboard.syncOutlookCalendar(integration.id); } catch (error) { window.alert(error.message); } finally { const data = await window.dashboard.getPageData('integrations'); renderIntegrations(data.integrations); } });
     }
     const actions = document.createElement('div'); actions.className = 'integration-row-actions';
     if (integration.provider_id === 'fitbit') {
-      const reconnect = document.createElement('button'); reconnect.type = 'button'; reconnect.className = 'button button-secondary button-small'; reconnect.textContent = integration.has_credentials ? 'Reauthorize' : 'Connect';
-      reconnect.addEventListener('click', () => showIntegrationForm({ ...provider, reconnectId: integration.id })); actions.append(reconnect);
+      const reconnect = integrationAction(integration.has_credentials ? 'Reauthorize' : 'Connect', 'key-round', () => showIntegrationForm({ ...provider, reconnectId: integration.id }));
+      actions.append(reconnect);
     }
     if (['google-calendar', 'outlook-calendar'].includes(integration.provider_id) && integration.has_credentials) {
-      const reconnect = document.createElement('button'); reconnect.type = 'button'; reconnect.className = 'button button-secondary button-small'; reconnect.textContent = 'Reauthorize';
       const reconnectProvider = { ...provider, reconnectId: integration.id, accountLabel: integration.account_label, clientId: JSON.parse(integration.config_json || '{}').clientId || provider.clientId };
-      reconnect.addEventListener('click', () => integration.provider_id === 'google-calendar' ? connectGoogleCalendarDirect(reconnectProvider, reconnect) : connectOutlookCalendarDirect(reconnectProvider, reconnect)); actions.append(reconnect);
+      const reconnect = integrationAction('Reauthorize', 'key-round', (button) => integration.provider_id === 'google-calendar' ? connectGoogleCalendarDirect(reconnectProvider, button) : connectOutlookCalendarDirect(reconnectProvider, button), 'Reconnect this account with your provider.');
+      actions.append(reconnect, manageCalendarsAction);
     }
-    if (syncButton) actions.append(syncButton); actions.append(edit, toggle, remove);
-    row.append(iconWrap, copy, status, actions); connectionList.append(row);
+    if (syncAction) actions.append(syncAction); actions.append(edit, toggle, remove);
+    row.append(head, actions); connectionList.append(row);
   }
   providerGrid.replaceChildren();
   const matchingProviders = providers.filter((provider) => matchesIntegrationQuery(provider));
@@ -914,9 +924,13 @@ async function showIntegrationCalendarsForm(integration) {
 }
 
 async function connectOutlookCalendarDirect(provider, trigger) {
+  const iconAction = trigger.classList.contains('integration-action');
   const originalText = trigger.textContent;
+  const originalLabel = trigger.getAttribute('aria-label');
+  const originalTitle = trigger.title;
   trigger.disabled = true;
-  trigger.textContent = 'Waiting for Microsoft…';
+  if (iconAction) { trigger.setAttribute('aria-label', 'Waiting for Microsoft…'); trigger.title = 'Waiting for Microsoft…'; }
+  else trigger.textContent = 'Waiting for Microsoft…';
   try {
     const connection = await window.dashboard.connectOutlookCalendar({ integrationId: provider.reconnectId });
     const { integrations } = await window.dashboard.getPageData('integrations');
@@ -933,15 +947,20 @@ async function connectOutlookCalendarDirect(provider, trigger) {
   } finally {
     if (trigger.isConnected) {
       trigger.disabled = false;
-      trigger.textContent = originalText;
+      if (iconAction) { trigger.setAttribute('aria-label', originalLabel); trigger.title = originalTitle; }
+      else trigger.textContent = originalText;
     }
   }
 }
 
 async function connectGoogleCalendarDirect(provider, trigger) {
+  const iconAction = trigger.classList.contains('integration-action');
   const originalText = trigger.textContent;
+  const originalLabel = trigger.getAttribute('aria-label');
+  const originalTitle = trigger.title;
   trigger.disabled = true;
-  trigger.textContent = 'Waiting for Google…';
+  if (iconAction) { trigger.setAttribute('aria-label', 'Waiting for Google…'); trigger.title = 'Waiting for Google…'; }
+  else trigger.textContent = 'Waiting for Google…';
   try {
     const connection = await window.dashboard.connectGoogleCalendar({ integrationId: provider.reconnectId });
     const { integrations } = await window.dashboard.getPageData('integrations');
@@ -958,16 +977,16 @@ async function connectGoogleCalendarDirect(provider, trigger) {
   } finally {
     if (trigger.isConnected) {
       trigger.disabled = false;
-      trigger.textContent = originalText;
+      if (iconAction) { trigger.setAttribute('aria-label', originalLabel); trigger.title = originalTitle; }
+      else trigger.textContent = originalText;
     }
   }
 }
 
-function integrationAction(label, iconName, action) {
-  const button = document.createElement('button'); button.type = 'button'; button.className = `button button-secondary button-small integration-action${iconName === 'trash-2' ? ' integration-action-danger' : ''}`; button.setAttribute('aria-label', label); button.title = label;
+function integrationAction(label, iconName, action, title = label) {
+  const button = document.createElement('button'); button.type = 'button'; button.className = `icon-button integration-action${iconName === 'unplug' ? ' integration-action-danger' : ''}`; button.setAttribute('aria-label', label); button.title = title;
   const icon = document.createElement('i'); icon.className = 'icon'; icon.dataset.lucide = iconName; button.append(icon);
-  button.append(document.createTextNode(label));
-  button.addEventListener('click', action); return button;
+  button.addEventListener('click', (event) => action(button, event)); return button;
 }
 
 async function showIntegrationEditForm(integration) {
@@ -1429,6 +1448,18 @@ function renderTodos(tasks) {
   if (todayLabel) todayLabel.textContent = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
 }
 
+function workflowIconAction(label, iconName, muted = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `workflow-icon-action${muted ? ' is-muted' : ''}`;
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  const icon = document.createElement('i'); icon.className = 'icon'; icon.dataset.lucide = iconName;
+  const text = document.createElement('span'); text.className = 'sr-only'; text.textContent = label;
+  button.append(icon, text);
+  return button;
+}
+
 function renderWorkflows(workflows, runs) {
   const list = pageRoot.querySelector('#workflow-list'); const runList = pageRoot.querySelector('#workflow-run-list');
   const actionList = pageRoot.querySelector('#workflow-action-list');
@@ -1481,14 +1512,14 @@ function renderWorkflows(workflows, runs) {
     const statusCell = document.createElement('td'); statusCell.className = 'workflow-state-cell';
     const status = document.createElement('span'); status.className = `workflow-state${workflow.enabled ? ' is-enabled' : ''}`; status.textContent = workflow.enabled ? 'Active' : 'Paused'; statusCell.append(status);
     const actions = document.createElement('td'); const actionGroup = document.createElement('div'); actionGroup.className = 'workflow-actions';
-    const run = document.createElement('button'); run.type = 'button'; run.className = 'workflow-action-link'; run.textContent = 'Run now';
+    const run = workflowIconAction('Run now', 'play');
     run.disabled = !workflow.integration_id || !['connected', 'error'].includes(workflow.integration_status);
-    run.addEventListener('click', async () => { run.disabled = true; run.textContent = 'Running…'; try { await window.dashboard.runWorkflow(workflow.id); } catch (error) { window.alert(error.message); } finally { await reloadWorkflows(); } });
+    run.addEventListener('click', async () => { run.disabled = true; run.title = 'Running…'; run.setAttribute('aria-label', 'Running…'); run.querySelector('.sr-only').textContent = 'Running…'; try { await window.dashboard.runWorkflow(workflow.id); } catch (error) { window.alert(error.message); } finally { await reloadWorkflows(); } });
     if (!isEvent) {
-      const configure = document.createElement('button'); configure.type = 'button'; configure.className = 'workflow-action-link is-muted'; configure.textContent = 'Configure';
+      const configure = workflowIconAction('Configure schedule', 'settings-2', true);
       configure.addEventListener('click', () => showWorkflowScheduleForm(workflow)); actionGroup.append(configure);
     }
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'workflow-action-link is-muted'; toggle.textContent = workflow.enabled ? 'Pause' : 'Resume';
+    const toggle = workflowIconAction(workflow.enabled ? 'Pause schedule' : 'Resume schedule', workflow.enabled ? 'pause' : 'play', true);
     toggle.addEventListener('click', async () => { await window.dashboard.setWorkflowEnabled(workflow.id, !workflow.enabled); await reloadWorkflows(); });
     actionGroup.append(run, toggle); actions.append(actionGroup); row.append(copyCell, trigger, activity, statusCell, actions); workflowBody.append(row);
   }
@@ -1628,14 +1659,17 @@ function renderFinance(allRecords, lastImportRun = financeLastImportRun) {
   pageRoot.querySelector('#finance-ledger-badge').hidden = !hasSamples;
   pageRoot.querySelector('[data-action="clear-finance-samples"]').hidden = !hasSamples;
   pageRoot.querySelector('[data-action="import-finance-statement"]').disabled = !financeImportWorkflowEnabled;
-  pageRoot.querySelector('#finance-import-last-run').textContent = !financeImportWorkflowEnabled
+  const importStatus = pageRoot.querySelector('#finance-import-last-run');
+  const importStatusText = !financeImportWorkflowEnabled
     ? 'Statement import is paused. Resume the Finance workflow from Workflows to continue.'
     : lastImportRun?.status === 'succeeded'
     ? `Last import: ${lastImportRun.result?.importedCount ?? 0} rows added from ${lastImportRun.result?.filename || 'a CSV statement'}.`
     : lastImportRun?.status === 'running' ? `Import in progress · ${lastImportRun.result?.stage?.replaceAll('_', ' ') || 'preparing file'}.`
       : lastImportRun?.status === 'failed' ? `Last import needs attention: ${lastImportRun.error_text || 'the file could not be processed'}`
         : lastImportRun?.status === 'cancelled' ? 'The previous import was cancelled. No staged rows were written to your ledger.'
-          : 'Choose a CSV to map its columns and review rows before anything reaches your ledger.';
+          : 'Choose a CSV to preview before importing it to your local ledger.';
+  importStatus.textContent = importStatusText;
+  importStatus.title = importStatusText;
 
   const categoryTotals = new Map();
   for (const record of expenses) categoryTotals.set(record.category || 'Other', (categoryTotals.get(record.category || 'Other') || 0) + Number(record.amount || 0));

@@ -225,7 +225,7 @@ function seedBuiltIns(db) {
     (id, name, version, domain_id, kind, manifest_json, description, icon, installed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const plugin of builtInPlugins) {
     insertPlugin.run(plugin.id, plugin.name, plugin.version, plugin.domainId, plugin.kind, JSON.stringify(plugin), plugin.description, plugin.icon, 1);
-    db.prepare('UPDATE plugins SET manifest_json = ? WHERE id = ?').run(JSON.stringify(plugin), plugin.id);
+    db.prepare('UPDATE plugins SET manifest_json = ?, icon = ? WHERE id = ?').run(JSON.stringify(plugin), plugin.icon, plugin.id);
   }
   for (const plugin of connectorPlugins) {
     insertPlugin.run(plugin.id, plugin.name, '0.1.0', plugin.domainId, 'source', JSON.stringify({ connector: plugin.id }), 'Connector adapter', plugin.icon, 0);

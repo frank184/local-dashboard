@@ -7,7 +7,6 @@
     </div>
     <div class="finance-heading-actions">
       <span class="finance-local-badge"><i></i> Stays on this device</span>
-      <button class="button button-secondary" type="button" data-action="import-finance-statement"><i data-lucide="file-up" class="icon button-leading-icon" aria-hidden="true"></i> Import statement</button>
       <button class="button button-primary" type="button" data-action="new-finance-transaction"><i data-lucide="plus" class="icon button-leading-icon" aria-hidden="true"></i> Add transaction</button>
     </div>
   </header>
@@ -23,9 +22,10 @@
     <article class="finance-summary-card finance-summary-highlight"><span>Left in plan</span><strong id="finance-left">—</strong><small id="finance-left-note">of your monthly plan</small></article>
   </section>
 
-  <section class="finance-import-pipeline" aria-label="Local statement import workflow">
-    <div class="finance-import-pipeline-copy"><div><span class="eyebrow">LOCAL DATA WORKFLOW</span><h2>Statement import</h2><p id="finance-import-last-run">Choose a CSV to map its columns and review rows before anything reaches your ledger.</p></div><span class="badge badge-neutral"><i></i> MANUAL RUN</span></div>
-    <ol class="finance-import-stages"><li><span>01</span><strong>Select file</strong><small>Read in this app</small></li><li><span>02</span><strong>Map columns</strong><small>Confirm dates and signs</small></li><li><span>03</span><strong>Review rows</strong><small>Check errors and duplicates</small></li><li><span>04</span><strong>Import</strong><small>Commit to local ledger</small></li></ol>
+  <section class="finance-import-strip" aria-label="Statement import">
+    <i data-lucide="file-up" class="icon" aria-hidden="true"></i>
+    <div class="finance-import-strip-copy"><strong>Statement import</strong><small id="finance-import-last-run" aria-live="polite">Choose a CSV to preview before importing it to your local ledger.</small></div>
+    <button class="button button-secondary button-small" type="button" data-action="import-finance-statement">Import CSV</button>
   </section>
 
   <div class="finance-content-grid">
