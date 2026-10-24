@@ -1,0 +1,49 @@
+<section class="page-view finance-page personal-page" id="finance">
+  <header class="finance-heading">
+    <div>
+      <p class="eyebrow">PERSONAL FINANCE</p>
+      <h1>Finance</h1>
+      <p class="intro">A grounded view of what came in, what went out, and where it went.</p>
+    </div>
+    <div class="finance-heading-actions">
+      <span class="finance-local-badge"><i></i> Stays on this device</span>
+      <button class="button button-secondary" type="button" data-action="import-finance-statement"><i data-lucide="file-up" class="icon button-leading-icon" aria-hidden="true"></i> Import statement</button>
+      <button class="button button-primary" type="button" data-action="new-finance-transaction"><i data-lucide="plus" class="icon button-leading-icon" aria-hidden="true"></i> Add transaction</button>
+    </div>
+  </header>
+
+  <div class="finance-period-row">
+    <div><strong id="finance-period-title">This month</strong><span id="finance-period-dates"></span></div>
+    <div class="finance-period-actions"><label class="finance-currency-control">Currency<select id="finance-currency" aria-label="Display currency"></select></label><span class="badge badge-neutral" id="finance-ledger-badge"><i></i> SAMPLE LEDGER</span><button class="text-button finance-clear-samples" type="button" data-action="clear-finance-samples">Clear sample data</button></div>
+  </div>
+
+  <section class="finance-summary" aria-label="Monthly cash flow summary">
+    <article class="finance-summary-card"><span>Income</span><strong id="finance-income">—</strong><small id="finance-income-note">This month</small></article>
+    <article class="finance-summary-card"><span>Spending</span><strong id="finance-spending">—</strong><small id="finance-spending-note">This month</small></article>
+    <article class="finance-summary-card finance-summary-highlight"><span>Left in plan</span><strong id="finance-left">—</strong><small id="finance-left-note">of your monthly plan</small></article>
+  </section>
+
+  <section class="finance-import-pipeline" aria-label="Local statement import workflow">
+    <div class="finance-import-pipeline-copy"><div><span class="eyebrow">LOCAL DATA WORKFLOW</span><h2>Statement import</h2><p id="finance-import-last-run">Choose a CSV to map its columns and review rows before anything reaches your ledger.</p></div><span class="badge badge-neutral"><i></i> MANUAL RUN</span></div>
+    <ol class="finance-import-stages"><li><span>01</span><strong>Select file</strong><small>Read in this app</small></li><li><span>02</span><strong>Map columns</strong><small>Confirm dates and signs</small></li><li><span>03</span><strong>Review rows</strong><small>Check errors and duplicates</small></li><li><span>04</span><strong>Import</strong><small>Commit to local ledger</small></li></ol>
+  </section>
+
+  <div class="finance-content-grid">
+    <section class="finance-panel finance-trend-panel">
+      <header class="finance-panel-heading"><div><h2>Cash flow</h2><p>Monthly income and spending, with quieter months left visible.</p></div><span class="finance-source-label">LOCAL RECORDS</span></header>
+      <div class="finance-chart-wrap"><canvas id="finance-cashflow-chart" role="img" aria-label="Monthly income and spending across the last six months"></canvas></div>
+      <div class="finance-chart-legend"><span><i class="income"></i> Income</span><span><i class="spending"></i> Spending</span></div>
+    </section>
+    <section class="finance-panel finance-category-panel">
+      <header class="finance-panel-heading"><div><h2>Spending plan</h2><p><strong id="finance-plan-summary">—</strong> across your categories this month</p></div><span class="finance-source-label">SAMPLE PLAN</span></header>
+      <div class="finance-category-list" id="finance-category-list"></div>
+    </section>
+  </div>
+
+  <section class="finance-panel finance-transactions-panel">
+    <header class="finance-panel-heading finance-transactions-heading"><div><h2>Recent transactions</h2><p>Every figure links back to a dated entry in your local ledger.</p></div><span class="finance-transaction-count" id="finance-transaction-count"></span></header>
+    <div class="finance-table-scroll"><table class="finance-table"><thead><tr><th scope="col">Transaction</th><th scope="col">Category</th><th scope="col">Date</th><th scope="col" class="finance-amount-heading">Amount</th></tr></thead><tbody id="finance-transactions"></tbody></table></div>
+    <div class="finance-empty-state" id="finance-empty-state" hidden><strong>No transactions yet</strong><span>Add an entry to start your local ledger.</span></div>
+  </section>
+  <p class="finance-data-note"><i data-lucide="info" class="icon" aria-hidden="true"></i> This view uses clearly labeled sample entries. Transaction data is stored in this app’s local SQLite database and is not sent to a finance service.</p>
+</section>

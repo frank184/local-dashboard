@@ -15,6 +15,8 @@ import {
   ChevronRight,
   CalendarDays,
   Clock,
+  Check,
+  FileUp,
   HeartPulse,
   Info,
   LayoutDashboard,
@@ -35,6 +37,8 @@ import {
   ToggleRight,
   Watch,
   Workflow,
+  Wallet,
+  ShieldCheck,
 } from 'lucide';
 import {
   CategoryScale,
@@ -59,6 +63,8 @@ const iconSet = {
   ChevronRight,
   CalendarDays,
   Clock,
+  Check,
+  FileUp,
   HeartPulse,
   Info,
   LayoutDashboard,
@@ -79,6 +85,8 @@ const iconSet = {
   ToggleRight,
   Watch,
   Workflow,
+  Wallet,
+  ShieldCheck,
 };
 
 const featureRoutes = new Set(bundledPlugins.map(({ manifest }) => manifest.id));
@@ -112,6 +120,10 @@ let activeCharts = [];
 let healthWeightModeCleanup = null;
 let healthPageData = null;
 let healthSettings = { weightUnit: 'lb', dateRange: '18m' };
+let financeTransactions = [];
+let financeCurrencyCode = localStorage.getItem('local-dashboard-finance-currency') || 'CAD';
+let financeLastImportRun = null;
+let financeImportWorkflowEnabled = true;
 let integrationRecords = [];
 let integrationSearch = '';
 let integrationCategory = '';
@@ -125,6 +137,7 @@ let calendarView = 'week';
 let calendarEvents = [];
 let calendarSettings = { startHour: 0, endHour: 24 };
 let calendarSidePanelCollapsed = false;
+let workflowSidePanelCollapsed = localStorage.getItem('local-dashboard-workflow-sidepanel-collapsed') === 'true';
 const themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 let themeChoice = localStorage.getItem('local-dashboard-theme') || 'system';
 
@@ -262,6 +275,8 @@ function renderPage(requestedPage) {
   pageRoot.innerHTML = pageTemplates[pageId];
   currentPage = pageId;
   document.body.classList.toggle('is-calendar-page', pageId === 'calendar');
+  document.body.classList.toggle('is-workflows-page', pageId === 'workflows');
+  document.documentElement.classList.toggle('is-workflows-page', pageId === 'workflows');
   pageLabel.textContent = pageTitles[pageId];
   if (featureRoutes.has(pageId)) pageRoot.querySelector('h1').textContent = pageTitles[pageId];
   updateActiveNavigation(pageId);
@@ -277,6 +292,32 @@ function renderPage(requestedPage) {
     toggle.addEventListener('change', () => { calendarSourceVisibility[toggle.dataset.calendarSource] = toggle.checked; renderCalendarBoard(calendarEvents); });
   });
   pageRoot.querySelector('[data-action="new-task"]')?.addEventListener('click', () => showTaskForm());
+  pageRoot.querySelector('[data-action="new-finance-transaction"]')?.addEventListener('click', () => showFinanceTransactionForm());
+  pageRoot.querySelector('[data-action="import-finance-statement"]')?.addEventListener('click', () => showFinanceStatementImport());
+  const workflowPanelToggle = pageRoot.querySelector('[data-workflow-sidepanel-toggle]');
+  if (workflowPanelToggle) {
+    applyWorkflowSidePanelState();
+    workflowPanelToggle.addEventListener('click', () => {
+      workflowSidePanelCollapsed = !workflowSidePanelCollapsed;
+      localStorage.setItem('local-dashboard-workflow-sidepanel-collapsed', String(workflowSidePanelCollapsed));
+      applyWorkflowSidePanelState();
+    });
+    pageRoot.querySelector('[data-workflow-sidepanel-backdrop]')?.addEventListener('click', () => {
+      workflowSidePanelCollapsed = true;
+      localStorage.setItem('local-dashboard-workflow-sidepanel-collapsed', 'true');
+      applyWorkflowSidePanelState();
+    });
+  }
+  pageRoot.querySelector('#finance-currency')?.addEventListener('change', (event) => {
+    financeCurrencyCode = event.target.value; localStorage.setItem('local-dashboard-finance-currency', financeCurrencyCode);
+    renderFinance(financeTransactions, financeLastImportRun);
+  });
+  pageRoot.querySelector('[data-action="clear-finance-samples"]')?.addEventListener('click', async () => {
+    const samples = financeTransactions.filter((record) => record.sourceName === 'Local sample').length;
+    if (!samples || !await showConfirm('Clear sample transactions?', 'This removes the example entries from the local ledger. Entries you added stay in place.', 'Clear sample data')) return;
+    await window.dashboard.clearFinanceSamples();
+    const data = await window.dashboard.getPageData('finance'); financeTransactions = data.transactions || []; financeLastImportRun = data.lastImportRun; financeImportWorkflowEnabled = data.importWorkflowEnabled !== false; renderFinance(financeTransactions, financeLastImportRun);
+  });
   pageRoot.querySelector('[data-action="new-plugin"]')?.addEventListener('click', () => showPluginForm());
   const integrationSearchInput = pageRoot.querySelector('#integration-search');
   const integrationCategorySelect = pageRoot.querySelector('#integration-category');
@@ -353,6 +394,28 @@ function applyCalendarSidePanelState() {
   renderIcons(button);
 }
 
+function applyWorkflowSidePanelState() {
+  const layout = pageRoot.querySelector('.workflows-layout');
+  const rail = pageRoot.querySelector('.workflow-right-rail');
+  const button = pageRoot.querySelector('[data-workflow-sidepanel-toggle]');
+  if (!layout || !rail || !button) return;
+  const narrowDrawer = window.matchMedia('(max-width: 920px)').matches;
+  const backdrop = pageRoot.querySelector('[data-workflow-sidepanel-backdrop]');
+  const main = layout.querySelector('.workflows-main');
+  layout.classList.toggle('is-workflow-sidepanel-collapsed', workflowSidePanelCollapsed);
+  document.body.classList.toggle('is-workflow-sidepanel-collapsed', workflowSidePanelCollapsed);
+  rail.classList.toggle('is-workflow-sidepanel-collapsed', workflowSidePanelCollapsed);
+  if (backdrop) backdrop.hidden = !narrowDrawer || workflowSidePanelCollapsed;
+  if (main) main.inert = narrowDrawer && !workflowSidePanelCollapsed;
+  button.setAttribute('aria-expanded', String(!workflowSidePanelCollapsed));
+  button.setAttribute('aria-label', `${workflowSidePanelCollapsed ? 'Expand' : 'Collapse'} task registry`);
+  button.title = `${workflowSidePanelCollapsed ? 'Expand' : 'Collapse'} task registry`;
+  const icon = button.querySelector('[data-lucide]');
+  if (icon) icon.dataset.lucide = workflowSidePanelCollapsed ? 'chevron-left' : 'chevron-right';
+  renderIcons(button);
+}
+window.addEventListener('resize', applyWorkflowSidePanelState);
+
 function formatCalendarHour(hour, isEnd = false) {
   if (hour === 24) return isEnd ? '12 AM (next day)' : '12 AM';
   const date = new Date(2020, 0, 1);
@@ -406,7 +469,7 @@ function normalizeCalendarSettings(settings) {
 
 async function hydratePage(pageId) {
   if (pageId === 'plugins/calendar/settings' || pageId === 'plugins/health/settings') return;
-  if (!['plugins', 'integrations', 'workflows', 'calendar', 'todos', 'health'].includes(pageId)) return;
+  if (!['plugins', 'integrations', 'workflows', 'calendar', 'todos', 'health', 'finance'].includes(pageId)) return;
   try {
     const data = await window.dashboard.getPageData(pageId);
     if (currentPage !== pageId) return;
@@ -424,6 +487,7 @@ async function hydratePage(pageId) {
     if (pageId === 'integrations') renderIntegrations(data.integrations || []);
     if (pageId === 'todos') renderTodos(data.tasks || []);
     if (pageId === 'health') { healthPageData = data; healthSettings = normalizeHealthSettings(data.settings); renderHealth(data); }
+    if (pageId === 'finance') { financeTransactions = data.transactions || []; financeLastImportRun = data.lastImportRun; financeImportWorkflowEnabled = data.importWorkflowEnabled !== false; renderFinance(financeTransactions, financeLastImportRun); }
   } catch (error) {
     console.error(`Could not load ${pageId} data`, error);
     if (pageId === 'integrations' && currentPage === pageId) {
@@ -1229,39 +1293,131 @@ function renderTodos(tasks) {
 
 function renderWorkflows(workflows, runs) {
   const list = pageRoot.querySelector('#workflow-list'); const runList = pageRoot.querySelector('#workflow-run-list');
-  if (!list || !runList) return;
-  list.replaceChildren(); runList.replaceChildren();
-  const count = pageRoot.querySelector('#workflow-count'); if (count) count.textContent = `${workflows.length} workflow${workflows.length === 1 ? '' : 's'}`;
-  if (!workflows.length) { const empty = document.createElement('div'); empty.className = 'integration-empty'; empty.textContent = 'No workflows yet. Connect Fitbit to create its local sync workflow.'; list.append(empty); }
-  for (const workflow of workflows) {
-    const card = document.createElement('article'); card.className = 'workflow-card';
+  const actionList = pageRoot.querySelector('#workflow-action-list');
+  if (!list || !runList || !actionList) return;
+  list.replaceChildren(); runList.replaceChildren(); actionList.replaceChildren();
+  const scheduled = workflows.filter((workflow) => workflow.trigger_type === 'schedule' || workflow.trigger_type === 'event');
+  const actions = workflows.filter((workflow) => workflow.trigger_type === 'manual');
+  const count = pageRoot.querySelector('#workflow-count'); if (count) count.textContent = `${scheduled.length} rule${scheduled.length === 1 ? '' : 's'}`;
+  const runCount = pageRoot.querySelector('#workflow-run-count'); if (runCount) runCount.textContent = `${runs.length} recent`;
+  const actionCount = pageRoot.querySelector('#workflow-action-count'); if (actionCount) actionCount.textContent = `${actions.length} task${actions.length === 1 ? '' : 's'}`;
+  const makeTable = (container, headings, className) => {
+    container.removeAttribute('tabindex'); container.removeAttribute('role'); container.removeAttribute('aria-label');
+    const table = document.createElement('table'); table.className = `workflow-table ${className}`;
+    table.setAttribute('aria-label', className.includes('history') ? 'Workflow run history' : 'Scheduled and event workflow rules');
+    const thead = document.createElement('thead'); const header = document.createElement('tr');
+    for (const label of headings) {
+      const th = document.createElement('th'); th.scope = 'col';
+      if (label) th.textContent = label;
+      else { const accessibleLabel = document.createElement('span'); accessibleLabel.className = 'sr-only'; accessibleLabel.textContent = 'Actions'; th.append(accessibleLabel); }
+      header.append(th);
+    }
+    thead.append(header); table.append(thead); const body = document.createElement('tbody'); table.append(body); container.append(table); return body;
+  };
+  const runBody = makeTable(runList, ['Workflow', 'Run details', 'Started', 'Status'], 'workflow-history-table');
+  if (!runs.length) { const row = document.createElement('tr'); row.className = 'workflow-empty-row'; const cell = document.createElement('td'); cell.colSpan = 4; cell.textContent = 'Workflow executions will appear here.'; row.append(cell); runBody.append(row); }
+  for (const run of runs) {
+    const row = document.createElement('tr'); row.className = 'workflow-run-row';
+    const title = document.createElement('th'); title.scope = 'row'; title.textContent = run.workflow_name;
+    const execution = document.createElement('td'); execution.className = 'workflow-run-details'; execution.textContent = run.error_text || (run.result?.stage ? `Finance import · ${run.result.stage.replaceAll('_', ' ')}${run.result.filename ? ` · ${run.result.filename}` : ''}${run.result.importedCount !== undefined ? ` · ${run.result.importedCount} rows` : ''}` : (run.result?.recordCount !== undefined ? `${run.result.recordCount} records` : '—'));
+    const started = document.createElement('td'); started.textContent = new Date(`${run.started_at}Z`).toLocaleString();
+    const result = document.createElement('td'); const status = document.createElement('span'); status.className = `workflow-run-status is-${run.status}`; status.textContent = run.status; result.append(status);
+    row.append(title, execution, started, result); runBody.append(row);
+  }
+
+  const workflowBody = makeTable(list, ['Automation', 'Trigger', 'Recent activity', 'State', ''], 'workflow-config-table');
+  if (!scheduled.length) { const row = document.createElement('tr'); row.className = 'workflow-empty-row'; const cell = document.createElement('td'); cell.colSpan = 5; cell.textContent = 'Scheduled and event-driven automations will appear here.'; row.append(cell); workflowBody.append(row); }
+  for (const workflow of scheduled) {
+    const isEvent = workflow.trigger_type === 'event';
+    const row = document.createElement('tr'); row.className = 'workflow-config-row';
+    const copyCell = document.createElement('th'); copyCell.scope = 'row';
     const copy = document.createElement('div'); copy.className = 'workflow-copy';
     const title = document.createElement('strong'); title.textContent = workflow.name;
-    const description = document.createElement('small'); description.textContent = `${workflow.integration_name || 'Integration removed'} · every ${Math.round((workflow.definition.intervalMinutes || 0) / 60)} hours · fetch sleep + weight → normalize → SQLite`;
-    const timing = document.createElement('small'); timing.textContent = workflow.last_run_at ? `Last run ${new Date(`${workflow.last_run_at}Z`).toLocaleString()} · next ${workflow.next_run_at ? new Date(workflow.next_run_at).toLocaleString() : 'paused'}` : `Next run ${workflow.next_run_at ? new Date(workflow.next_run_at).toLocaleString() : 'paused'} · no runs yet`;
-    copy.append(title, description, timing);
-    const status = document.createElement('span'); status.className = `badge ${workflow.enabled ? 'badge-success' : 'badge-neutral'}`; status.textContent = workflow.enabled ? 'Scheduled' : 'Paused';
-    const actions = document.createElement('div'); actions.className = 'workflow-actions';
-    const run = document.createElement('button'); run.type = 'button'; run.className = 'button button-secondary button-small'; run.textContent = 'Run now';
+    const description = document.createElement('small'); description.textContent = workflow.integration_name || workflow.plugin_name || 'Plugin workflow';
+    copy.append(title, description); copyCell.append(copy);
+    const trigger = document.createElement('td'); trigger.className = 'workflow-trigger';
+    const cadence = document.createElement('strong'); cadence.textContent = isEvent ? (workflow.definition.eventName || workflow.definition.event || 'When triggered by an event') : `Every ${Math.round((workflow.definition.intervalMinutes || 0) / 60)} hours`;
+    const triggerDetail = document.createElement('small'); triggerDetail.textContent = isEvent ? (workflow.definition.eventDescription || 'Event-driven') : 'While the dashboard is open'; trigger.append(cadence, triggerDetail);
+    const activity = document.createElement('td'); activity.className = 'workflow-activity';
+    const timing = document.createElement('small'); timing.textContent = workflow.last_run_at ? `Last run ${new Date(`${workflow.last_run_at}Z`).toLocaleString()}${!isEvent ? ` · next ${workflow.next_run_at ? new Date(workflow.next_run_at).toLocaleString() : 'paused'}` : ''}` : `No runs yet${!isEvent && workflow.next_run_at ? ` · next ${new Date(workflow.next_run_at).toLocaleString()}` : ''}`; activity.append(timing);
+    const statusCell = document.createElement('td'); statusCell.className = 'workflow-state-cell';
+    const status = document.createElement('span'); status.className = `workflow-state${workflow.enabled ? ' is-enabled' : ''}`; status.textContent = workflow.enabled ? 'Active' : 'Paused'; statusCell.append(status);
+    const actions = document.createElement('td'); const actionGroup = document.createElement('div'); actionGroup.className = 'workflow-actions';
+    const run = document.createElement('button'); run.type = 'button'; run.className = 'workflow-action-link'; run.textContent = 'Run now';
     run.disabled = !workflow.integration_id || !['connected', 'error'].includes(workflow.integration_status);
     run.addEventListener('click', async () => { run.disabled = true; run.textContent = 'Running…'; try { await window.dashboard.runWorkflow(workflow.id); } catch (error) { window.alert(error.message); } finally { await reloadWorkflows(); } });
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'button button-quiet button-small'; toggle.textContent = workflow.enabled ? 'Pause' : 'Resume';
+    if (!isEvent) {
+      const configure = document.createElement('button'); configure.type = 'button'; configure.className = 'workflow-action-link is-muted'; configure.textContent = 'Configure';
+      configure.addEventListener('click', () => showWorkflowScheduleForm(workflow)); actionGroup.append(configure);
+    }
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'workflow-action-link is-muted'; toggle.textContent = workflow.enabled ? 'Pause' : 'Resume';
     toggle.addEventListener('click', async () => { await window.dashboard.setWorkflowEnabled(workflow.id, !workflow.enabled); await reloadWorkflows(); });
-    actions.append(run, toggle); card.append(copy, status, actions); list.append(card);
+    actionGroup.append(run, toggle); actions.append(actionGroup); row.append(copyCell, trigger, activity, statusCell, actions); workflowBody.append(row);
   }
-  if (!runs.length) { const empty = document.createElement('div'); empty.className = 'integration-empty'; empty.textContent = 'Workflow executions will appear here.'; runList.append(empty); }
-  for (const run of runs) {
-    const row = document.createElement('article'); row.className = 'workflow-run-row';
-    const title = document.createElement('strong'); title.textContent = run.workflow_name;
-    const detail = document.createElement('small'); detail.textContent = run.error_text || `${run.started_at}${run.result ? ` · ${run.result.recordCount} records` : ''}`;
-    const status = document.createElement('span'); status.className = `badge ${run.status === 'succeeded' ? 'badge-success' : run.status === 'failed' ? 'badge-warning' : 'badge-neutral'}`; status.textContent = run.status;
-    row.append(title, detail, status); runList.append(row);
+
+  if (!actions.length) { const empty = document.createElement('p'); empty.className = 'workflow-action-empty'; empty.textContent = 'Installed plugins can register on-demand tasks here.'; actionList.append(empty); }
+  const categories = new Map();
+  for (const workflow of actions) {
+    const category = workflow.definition.category || workflow.plugin_name || 'Other';
+    if (!categories.has(category)) categories.set(category, []);
+    categories.get(category).push(workflow);
   }
-  renderIcons(list); renderIcons(runList);
+  for (const [category, categoryActions] of categories) {
+    const group = document.createElement('section'); group.className = 'workflow-action-category';
+    const heading = document.createElement('h3'); heading.textContent = category; group.append(heading);
+    for (const workflow of categoryActions) {
+      const row = document.createElement('div'); row.className = 'workflow-action-definition';
+      const copy = document.createElement('div'); copy.className = 'workflow-action-definition-copy';
+      const title = document.createElement('strong'); title.textContent = workflow.name;
+      const detail = document.createElement('small'); detail.textContent = workflow.definition.summary || (workflow.definition.jobType === 'local_data_pipeline' ? 'Import a statement into the local Finance ledger.' : 'On-demand plugin task.'); copy.append(title, detail);
+      const metadata = document.createElement('dl'); metadata.className = 'workflow-task-metadata';
+      const financeStages = {
+        select_file: 'Choose a statement file', parse_csv: 'Read the CSV', map_columns: 'Map transaction columns', preview_rows: 'Review rows',
+        normalize: 'Normalize transactions', deduplicate: 'Check for duplicates', commit_records: 'Save to the local ledger',
+      };
+      const metadataEntries = [
+        ['Plugin', workflow.plugin_name || category],
+        ['Trigger', workflow.definition.jobType === 'local_data_pipeline' ? 'Manual · requires a local CSV' : 'Manual request'],
+        ['Steps', workflow.definition.stages?.map((stage) => financeStages[stage] || stage.replaceAll('_', ' ')).join(' · ') || 'Defined by plugin'],
+        ['Data', workflow.definition.output || (workflow.plugin_id === 'finance' ? 'Personal Finance · local SQLite' : 'Stored by the plugin on this device')],
+      ];
+      for (const [term, value] of metadataEntries) { const entry = document.createElement('div'); const dt = document.createElement('dt'); dt.textContent = term; const dd = document.createElement('dd'); dd.textContent = value; entry.append(dt, dd); metadata.append(entry); }
+      const details = document.createElement('details'); details.className = 'workflow-task-details'; const summary = document.createElement('summary'); summary.textContent = 'Task details'; details.append(summary, metadata); copy.append(details);
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'workflow-action-link workflow-run-task'; button.textContent = 'Run task';
+      button.disabled = !workflow.enabled;
+      button.addEventListener('click', async () => {
+        if (workflow.definition.jobType === 'local_data_pipeline' && workflow.plugin_id === 'finance') { showFinanceStatementImport(); return; }
+        button.disabled = true; button.textContent = 'Running…'; try { await window.dashboard.runWorkflow(workflow.id); } catch (error) { window.alert(error.message); } finally { await reloadWorkflows(); }
+      });
+      row.append(copy, button); group.append(row);
+    }
+    actionList.append(group);
+  }
+  renderIcons(list); renderIcons(runList); renderIcons(actionList);
 }
 
 async function reloadWorkflows() {
   const data = await window.dashboard.getPageData('workflows'); renderWorkflows(data.workflows || [], data.runs || []);
+}
+
+function showWorkflowScheduleForm(workflow) {
+  const form = document.createElement('form'); form.className = 'dialog-form workflow-schedule-form';
+  const intro = document.createElement('p'); intro.className = 'dialog-copy field-wide'; intro.textContent = `Set how often ${workflow.name} runs while Local Dashboard is open.`;
+  const label = document.createElement('label'); label.className = 'field field-wide'; label.textContent = 'Run every';
+  const select = document.createElement('select');
+  const intervals = [[15, '15 minutes'], [30, '30 minutes'], [60, '1 hour'], [180, '3 hours'], [360, '6 hours'], [720, '12 hours'], [1440, '24 hours']];
+  for (const [minutes, name] of intervals) { const option = document.createElement('option'); option.value = String(minutes); option.textContent = name; select.append(option); }
+  select.value = String(workflow.definition.intervalMinutes || 360); label.append(select); form.append(intro, label);
+  const error = document.createElement('p'); error.className = 'form-error field-wide'; error.hidden = true; form.append(error);
+  const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
+  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'button'; save.textContent = 'Save schedule';
+  const dialog = openDialog('Configure schedule', form, [cancel, save]);
+  cancel.addEventListener('click', () => dialog.close());
+  save.addEventListener('click', async () => {
+    save.disabled = true; error.hidden = true;
+    try { await window.dashboard.updateWorkflowSchedule(workflow.id, Number(select.value)); dialog.close(); await reloadWorkflows(); }
+    catch (cause) { error.textContent = cause.message; error.hidden = false; save.disabled = false; }
+  });
 }
 
 function showTaskForm(task = null) {
@@ -1293,6 +1449,362 @@ function showTaskForm(task = null) {
 
 async function reloadTodos() {
   const { tasks } = await window.dashboard.getPageData('todos'); renderTodos(tasks || []);
+}
+
+const financePlans = { Groceries: 620, Dining: 360, Transport: 180, Bills: 430, Home: 310, Subscriptions: 95, Health: 140, Shopping: 240, Leisure: 180, Gifts: 110, Other: 100 };
+
+function financeCurrency(amount, currency = 'CAD') {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount);
+}
+
+function renderFinance(allRecords, lastImportRun = financeLastImportRun) {
+  const currencies = [...new Set(allRecords.map((record) => record.currency || 'CAD'))].sort();
+  if (!currencies.length) currencies.push('CAD');
+  if (!currencies.includes(financeCurrencyCode)) financeCurrencyCode = currencies.includes('CAD') ? 'CAD' : currencies[0];
+  const currencySelect = pageRoot.querySelector('#finance-currency');
+  currencySelect.replaceChildren();
+  for (const code of currencies) { const option = document.createElement('option'); option.value = code; option.textContent = code; currencySelect.append(option); }
+  currencySelect.value = financeCurrencyCode;
+  const records = allRecords.filter((record) => (record.currency || 'CAD') === financeCurrencyCode);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthRecords = records.filter((record) => new Date(record.occurred_at) >= monthStart && new Date(record.occurred_at) <= now);
+  const currency = financeCurrencyCode;
+  const income = monthRecords.filter((record) => record.direction === 'income').reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const expenses = monthRecords.filter((record) => record.direction !== 'income');
+  const spending = expenses.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+  const hasPlan = currency === 'CAD';
+  const planTotal = hasPlan ? Object.values(financePlans).reduce((sum, amount) => sum + amount, 0) : 0;
+  const left = planTotal - spending;
+  const monthName = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(now);
+  const dateRange = `${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(monthStart)} – ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(now)}`;
+  pageRoot.querySelector('#finance-period-title').textContent = monthName;
+  pageRoot.querySelector('#finance-period-dates').textContent = dateRange;
+  pageRoot.querySelector('#finance-income').textContent = financeCurrency(income, currency);
+  pageRoot.querySelector('#finance-spending').textContent = financeCurrency(spending, currency);
+  pageRoot.querySelector('#finance-left').textContent = hasPlan ? financeCurrency(Math.abs(left), currency) : '—';
+  pageRoot.querySelector('#finance-left').classList.toggle('is-over-plan', hasPlan && left < 0);
+  pageRoot.querySelector('#finance-left-note').textContent = hasPlan ? (left < 0 ? `over your ${financeCurrency(planTotal, currency)} sample plan` : `of your ${financeCurrency(planTotal, currency)} sample plan`) : 'No plan is configured for this currency';
+  pageRoot.querySelector('#finance-plan-summary').textContent = hasPlan ? `${financeCurrency(spending, currency)} of ${financeCurrency(planTotal, currency)}` : `${financeCurrency(spending, currency)} · no plan configured`;
+  const hasSamples = allRecords.some((record) => record.sourceName === 'Local sample');
+  pageRoot.querySelector('#finance-ledger-badge').hidden = !hasSamples;
+  pageRoot.querySelector('[data-action="clear-finance-samples"]').hidden = !hasSamples;
+  pageRoot.querySelector('[data-action="import-finance-statement"]').disabled = !financeImportWorkflowEnabled;
+  pageRoot.querySelector('#finance-import-last-run').textContent = !financeImportWorkflowEnabled
+    ? 'Statement import is paused. Resume the Finance workflow from Workflows to continue.'
+    : lastImportRun?.status === 'succeeded'
+    ? `Last import: ${lastImportRun.result?.importedCount ?? 0} rows added from ${lastImportRun.result?.filename || 'a CSV statement'}.`
+    : lastImportRun?.status === 'running' ? `Import in progress · ${lastImportRun.result?.stage?.replaceAll('_', ' ') || 'preparing file'}.`
+      : lastImportRun?.status === 'failed' ? `Last import needs attention: ${lastImportRun.error_text || 'the file could not be processed'}`
+        : lastImportRun?.status === 'cancelled' ? 'The previous import was cancelled. No staged rows were written to your ledger.'
+          : 'Choose a CSV to map its columns and review rows before anything reaches your ledger.';
+
+  const categoryTotals = new Map();
+  for (const record of expenses) categoryTotals.set(record.category || 'Other', (categoryTotals.get(record.category || 'Other') || 0) + Number(record.amount || 0));
+  const categoryRoot = pageRoot.querySelector('#finance-category-list');
+  categoryRoot.replaceChildren();
+  const categoryNames = hasPlan ? [...new Set([...Object.keys(financePlans), ...categoryTotals.keys()])] : [...categoryTotals.keys()];
+  for (const name of categoryNames.sort((a, b) => (categoryTotals.get(b) || 0) - (categoryTotals.get(a) || 0))) {
+    const budget = hasPlan ? (financePlans[name] ?? null) : null;
+    const amount = categoryTotals.get(name) || 0;
+    const row = document.createElement('div'); row.className = 'finance-category-row';
+    const top = document.createElement('div'); top.className = 'finance-category-top';
+    const label = document.createElement('span'); label.textContent = name;
+    const value = document.createElement('strong'); value.textContent = budget === null ? `${financeCurrency(amount, currency)}${hasPlan ? ' · no plan' : ''}` : `${financeCurrency(amount, currency)} of ${financeCurrency(budget, currency)}`;
+    top.append(label, value);
+    if (budget !== null) {
+      const track = document.createElement('div'); track.className = 'finance-progress-track'; track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', `${name} plan used`); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', String(budget)); track.setAttribute('aria-valuenow', String(Math.min(amount, budget)));
+      const fill = document.createElement('span'); fill.style.width = `${Math.min(100, amount / budget * 100)}%`; if (amount > budget) fill.classList.add('is-over-plan'); track.append(fill);
+      row.append(top, track);
+    } else row.append(top);
+    categoryRoot.append(row);
+  }
+
+  const transactionRoot = pageRoot.querySelector('#finance-transactions'); transactionRoot.replaceChildren();
+  const latest = [...records].sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at)).slice(0, 8);
+  pageRoot.querySelector('#finance-transaction-count').textContent = `${records.length} entries`;
+  pageRoot.querySelector('#finance-empty-state').hidden = records.length > 0;
+  pageRoot.querySelector('.finance-table-scroll').hidden = records.length === 0;
+  for (const record of latest) {
+    const row = document.createElement('tr'); const merchantCell = document.createElement('td');
+    const merchant = document.createElement('strong'); merchant.textContent = record.merchant || 'Transaction';
+    const source = document.createElement('small'); source.textContent = record.sourceName === 'Local sample' ? 'Sample entry' : record.importBatchId ? `Statement · ${record.sourceFileName || 'CSV'}` : 'On this device'; merchantCell.append(merchant, source);
+    const category = document.createElement('td'); category.textContent = record.category || 'Other';
+    const date = document.createElement('td'); date.textContent = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(record.occurred_at));
+    const amount = document.createElement('td'); amount.className = `finance-amount${record.direction === 'income' ? ' is-income' : ''}`; amount.textContent = `${record.direction === 'income' ? '+' : '−'}${financeCurrency(Number(record.amount || 0), record.currency || currency)}`;
+    row.append(merchantCell, category, date, amount); transactionRoot.append(row);
+  }
+  renderFinanceChart(records, currency);
+}
+
+function renderFinanceChart(records, currency) {
+  const canvas = pageRoot.querySelector('#finance-cashflow-chart'); if (!canvas) return;
+  const months = []; const current = new Date(); current.setDate(1); current.setHours(0, 0, 0, 0);
+  for (let offset = 5; offset >= 0; offset -= 1) { const date = new Date(current.getFullYear(), current.getMonth() - offset, 1); months.push({ date, label: new Intl.DateTimeFormat(undefined, { month: 'short' }).format(date), income: 0, spending: 0 }); }
+  for (const record of records) {
+    const date = new Date(record.occurred_at); const month = months.find((item) => item.date.getFullYear() === date.getFullYear() && item.date.getMonth() === date.getMonth()); if (!month) continue;
+    if (record.direction === 'income') month.income += Number(record.amount || 0); else month.spending += Number(record.amount || 0);
+  }
+  const chart = new Chart(canvas, { type: 'line', data: { labels: months.map((item) => item.label), datasets: [
+    { label: 'Income', data: months.map((item) => item.income), borderColor: '#39755a', backgroundColor: 'rgba(57,117,90,.08)', pointBackgroundColor: '#39755a', pointRadius: 3, borderWidth: 2, tension: .28, fill: true },
+    { label: 'Spending', data: months.map((item) => item.spending), borderColor: '#536fa1', backgroundColor: 'rgba(83,111,161,.06)', pointBackgroundColor: '#536fa1', pointRadius: 3, borderWidth: 2, tension: .28, fill: true },
+  ] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${financeCurrency(context.parsed.y, currency)}` } } }, scales: { x: { grid: { display: false }, ticks: { color: '#89918b', maxRotation: 0 } }, y: { beginAtZero: true, grid: { color: '#edf0ed' }, ticks: { color: '#89918b', callback: (value) => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value) } } } } });
+  activeCharts.push(chart);
+}
+
+function showFinanceStatementImport() {
+  const state = { importId: null, file: null, preview: null, mapping: null, fallbackCurrency: 'CAD', accountLabel: '', keepPossibleDuplicates: false, rowOverrides: {}, rowPossibleDuplicates: {}, reviewedPages: new Set(), completed: false };
+  const content = document.createElement('div'); content.className = 'finance-import-dialog-content';
+  const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
+  const primary = document.createElement('button'); primary.className = 'button button-primary'; primary.type = 'button'; primary.textContent = 'Choose CSV';
+  const dialog = openDialog('Import bank statement', content, [cancel, primary]);
+  dialog.classList.add('finance-import-dialog');
+  const footer = dialog.querySelector('.dialog-actions');
+  const chooseView = () => {
+    content.replaceChildren();
+    const intro = document.createElement('p'); intro.className = 'dialog-copy'; intro.textContent = 'Select a CSV statement saved on this device. The file is read by the desktop app and is not uploaded or copied to a server.';
+    const privacy = document.createElement('div'); privacy.className = 'finance-import-privacy';
+    privacy.innerHTML = '<i data-lucide="shield-check" class="icon" aria-hidden="true"></i><span><strong>Private by design</strong><small>Nothing is written to your ledger until you confirm the reviewed rows.</small></span>';
+    const example = document.createElement('div'); example.className = 'finance-import-example';
+    const exampleLabel = document.createElement('small'); exampleLabel.textContent = 'Example mapping · your bank may use different column names';
+    const exampleFlow = document.createElement('p'); exampleFlow.textContent = 'Match the date, description, and amount columns to the corresponding fields.';
+    example.append(exampleLabel, exampleFlow);
+    const status = document.createElement('p'); status.className = 'finance-import-status'; status.setAttribute('aria-live', 'polite');
+    content.append(intro, privacy, example, status); renderIcons(content);
+    setFooter([cancel, primary]); primary.textContent = 'Choose CSV'; primary.disabled = false;
+    primary.onclick = async () => {
+      primary.disabled = true; primary.textContent = 'Reading locally…'; status.textContent = 'Opening the file on this device.';
+      try {
+        const selected = await window.dashboard.chooseFinanceStatement();
+        if (!selected || selected.cancelled) { primary.disabled = false; primary.textContent = 'Choose CSV'; status.textContent = ''; return; }
+        state.importId = selected.importId; state.file = selected; renderMappingView();
+      } catch (error) { status.textContent = error.message; primary.disabled = false; primary.textContent = 'Try again'; }
+    };
+  };
+  const setFooter = (buttons) => { footer.replaceChildren(...buttons); };
+  const closeAndCancel = async () => {
+    if (state.importId && !state.completed) await window.dashboard.cancelFinanceStatement(state.importId).catch(() => {});
+    state.importId = null; dialog.close();
+  };
+  cancel.onclick = () => { void closeAndCancel(); };
+  dialog.addEventListener('close', () => {
+    if (state.importId && !state.completed) void window.dashboard.cancelFinanceStatement(state.importId).catch(() => {});
+  }, { once: true });
+
+  function mappingSelect(field, required = false) {
+    const label = document.createElement('label'); label.className = 'field finance-mapping-field';
+    const title = document.createElement('span'); title.textContent = `${field.label}${required ? ' · required' : ''}`; label.append(title);
+    const select = document.createElement('select'); select.name = field.key;
+    const none = document.createElement('option'); none.value = ''; none.textContent = 'Not mapped'; select.append(none);
+    state.file.headers.forEach((header, index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = header; select.append(option); });
+    const suggested = state.mapping && Object.hasOwn(state.mapping, field.key) ? state.mapping[field.key] : state.file.suggestions[field.key]; if (suggested !== null && suggested !== undefined) select.value = String(suggested);
+    label.append(select); return label;
+  }
+
+  function renderMappingView() {
+    dialog.classList.add('is-wide');
+    content.replaceChildren(); content.classList.add('is-mapping');
+    const fileHeading = document.createElement('div'); fileHeading.className = 'finance-import-file-heading';
+    const fileTitle = document.createElement('strong'); fileTitle.textContent = state.file.filename;
+    const fileMeta = document.createElement('small'); fileMeta.textContent = `${state.file.rowCount.toLocaleString()} rows · ${state.file.delimiter === 'tab' ? 'tab-separated' : `“${state.file.delimiter}” separated`}`;
+    fileHeading.append(fileTitle, fileMeta);
+    const form = document.createElement('form'); form.className = 'finance-import-mapping-form';
+    const delimiterField = document.createElement('label'); delimiterField.className = 'field'; delimiterField.innerHTML = '<span>Separator</span><select name="delimiter"></select>';
+    const delimiterSelect = delimiterField.querySelector('select');
+    for (const optionData of state.file.delimiterOptions || []) { const option = document.createElement('option'); option.value = optionData.value; option.textContent = `${optionData.label || (optionData.value === 'tab' ? 'Tab' : optionData.value[0].toUpperCase() + optionData.value.slice(1))} · ${optionData.columnCount} columns`; delimiterSelect.append(option); }
+    delimiterSelect.value = state.file.delimiter;
+    delimiterSelect.addEventListener('change', async () => {
+      delimiterSelect.disabled = true; error.textContent = 'Re-reading the selected file locally…';
+      try { const parsed = await window.dashboard.selectFinanceStatementDelimiter({ importId: state.importId, delimiter: delimiterSelect.value }); state.file = { ...state.file, ...parsed }; state.mapping = null; state.keepPossibleDuplicates = false; error.textContent = ''; renderMappingView(); }
+      catch (delimiterError) { error.textContent = delimiterError.message; delimiterSelect.disabled = false; }
+    });
+    const mappingGrid = document.createElement('div'); mappingGrid.className = 'finance-mapping-grid';
+    for (const field of [
+      { key: 'date', label: 'Transaction date', required: true }, { key: 'description', label: 'Description / payee', required: true },
+      { key: 'amount', label: 'Signed or single amount' }, { key: 'debit', label: 'Debit / money out' }, { key: 'credit', label: 'Credit / money in' },
+      { key: 'currency', label: 'Currency' }, { key: 'category', label: 'Category' },
+    ]) mappingGrid.append(mappingSelect(field, field.required));
+    const formatField = document.createElement('label'); formatField.className = 'field'; formatField.innerHTML = '<span>Date format</span><select name="dateFormat"><option value="auto">Detect when unambiguous</option><option value="dmy">Day / month / year</option><option value="mdy">Month / day / year</option></select>';
+    const amountModeField = document.createElement('label'); amountModeField.className = 'field'; amountModeField.innerHTML = '<span>Single amount sign</span><select name="amountMode"><option value="signed">Negative is expense, positive is income</option><option value="positive-expense">Positive is expense</option><option value="positive-income">Positive is income</option></select>';
+    const currencyField = document.createElement('label'); currencyField.className = 'field'; currencyField.innerHTML = '<span>Fallback currency</span><input name="fallbackCurrency" value="CAD" maxlength="3" pattern="[A-Za-z]{3}" required>';
+    const accountField = document.createElement('label'); accountField.className = 'field'; accountField.innerHTML = '<span>Account label <small>(optional)</small></span><input name="accountLabel" maxlength="80" placeholder="e.g. Daily chequing">';
+    formatField.querySelector('select').value = state.mapping?.dateFormat || 'auto';
+    amountModeField.querySelector('select').value = state.mapping?.amountMode || 'signed';
+    currencyField.querySelector('input').value = state.fallbackCurrency || 'CAD';
+    accountField.querySelector('input').value = state.accountLabel || '';
+    const extraGrid = document.createElement('div'); extraGrid.className = 'finance-mapping-extras'; extraGrid.append(formatField, amountModeField, currencyField, accountField);
+    const sampleTitle = document.createElement('p'); sampleTitle.className = 'finance-preview-label'; sampleTitle.textContent = 'First rows from the selected file';
+    const sampleTable = document.createElement('div'); sampleTable.className = 'finance-raw-sample';
+    const table = document.createElement('table'); const head = document.createElement('thead'); const headRow = document.createElement('tr');
+    state.file.headers.forEach((header) => { const th = document.createElement('th'); th.textContent = header; headRow.append(th); }); head.append(headRow); table.append(head);
+    const body = document.createElement('tbody'); state.file.sampleRows.forEach((row) => { const tr = document.createElement('tr'); row.cells.forEach((cell) => { const td = document.createElement('td'); td.textContent = cell; tr.append(td); }); body.append(tr); }); table.append(body); sampleTable.append(table);
+    const error = document.createElement('p'); error.className = 'finance-import-status'; error.setAttribute('aria-live', 'polite');
+    form.append(delimiterField, mappingGrid, extraGrid, sampleTitle, sampleTable, error); content.append(fileHeading, form);
+    const amountSelect = form.elements.amount; const debitSelect = form.elements.debit; const creditSelect = form.elements.credit;
+    amountSelect.addEventListener('change', () => { if (amountSelect.value !== '') { debitSelect.value = ''; creditSelect.value = ''; } });
+    for (const splitSelect of [debitSelect, creditSelect]) splitSelect.addEventListener('change', () => { if (splitSelect.value !== '') amountSelect.value = ''; });
+    renderIcons(content);
+    const back = document.createElement('button'); back.className = 'button button-secondary'; back.type = 'button'; back.textContent = 'Choose another file';
+    const previewButton = document.createElement('button'); previewButton.className = 'button button-primary'; previewButton.type = 'button'; previewButton.textContent = 'Preview rows';
+    setFooter([cancel, back, previewButton]);
+    back.onclick = async () => { await closeAndCancel(); showFinanceStatementImport(); };
+    previewButton.onclick = async () => {
+      if (!form.reportValidity()) return;
+      const mapping = {};
+      for (const key of ['date', 'description', 'amount', 'debit', 'credit', 'currency', 'category']) mapping[key] = form.elements[key].value === '' ? null : Number(form.elements[key].value);
+      mapping.dateFormat = form.elements.dateFormat.value; mapping.amountMode = form.elements.amountMode.value;
+      const fallbackCurrency = form.elements.fallbackCurrency.value.trim().toUpperCase(); state.fallbackCurrency = fallbackCurrency; state.accountLabel = form.elements.accountLabel.value.trim(); state.mapping = mapping;
+      previewButton.disabled = true; previewButton.textContent = 'Checking rows…'; error.textContent = '';
+      try { state.preview = await window.dashboard.previewFinanceStatement({ importId: state.importId, mapping, fallbackCurrency, accountLabel: state.accountLabel }); state.rowOverrides = {}; state.rowPossibleDuplicates = {}; state.reviewedPages = new Set(); state.keepPossibleDuplicates = false; renderPreviewView(); }
+      catch (previewError) { error.textContent = previewError.message; previewButton.disabled = false; previewButton.textContent = 'Preview rows'; }
+    };
+  }
+
+  function renderPreviewView() {
+    dialog.classList.add('is-wide');
+    content.replaceChildren(); content.classList.remove('is-mapping'); content.classList.add('is-preview');
+    const heading = document.createElement('div'); heading.className = 'finance-import-file-heading';
+    const title = document.createElement('strong'); title.textContent = 'Review before importing';
+    const subtitle = document.createElement('small'); subtitle.textContent = `${state.file.filename} · mapped as ${state.mapping.dateFormat === 'auto' ? 'unambiguous date format' : state.mapping.dateFormat.toUpperCase()}`; heading.append(title, subtitle);
+    const counts = document.createElement('div'); counts.className = 'finance-import-counts';
+    for (const [label, count, tone] of [['Ready', state.preview.validCount, 'success'], ['Possible duplicates', state.preview.duplicateCount, 'warning'], ['Need attention', state.preview.invalidCount, 'danger']]) {
+      const card = document.createElement('div'); card.className = `finance-import-count ${tone}`; const number = document.createElement('strong'); number.textContent = count.toLocaleString(); const text = document.createElement('span'); text.textContent = label; card.append(number, text); counts.append(card);
+    }
+    const settings = document.createElement('div'); settings.className = 'finance-import-review-options';
+    const duplicateLabel = document.createElement('label'); duplicateLabel.className = 'finance-review-checkbox';
+    const duplicateToggle = document.createElement('input'); duplicateToggle.type = 'checkbox'; duplicateToggle.checked = state.keepPossibleDuplicates;
+    const duplicateCopy = document.createElement('span'); duplicateCopy.textContent = 'Keep possible duplicates'; duplicateLabel.append(duplicateToggle, duplicateCopy);
+    duplicateToggle.addEventListener('change', async () => {
+      state.keepPossibleDuplicates = duplicateToggle.checked; state.reviewedPages.clear(); pageReview.checked = false;
+      await window.dashboard.reviewFinanceStatementPage({ importId: state.importId, offset: state.preview.previewOffset, acknowledged: false, keepPossibleDuplicates: state.keepPossibleDuplicates }).catch((error) => { hint.textContent = error.message; });
+      pageLabel.textContent = pageSummary();
+      renderPreviewTable(); updateImportAction();
+    });
+    const accountNote = document.createElement('span'); accountNote.textContent = `${state.accountLabel ? `Account label: ${state.accountLabel} · ` : ''}${state.mapping.currency === null ? `${state.fallbackCurrency || 'CAD'} fallback` : 'Currency from file'}`;
+    settings.append(duplicateLabel, accountNote);
+    const tableWrap = document.createElement('div'); tableWrap.className = 'finance-import-preview-table';
+    const pageControls = document.createElement('div'); pageControls.className = 'finance-import-page-controls';
+    const previousPage = document.createElement('button'); previousPage.type = 'button'; previousPage.className = 'button button-quiet button-small'; previousPage.textContent = 'Previous 100';
+    const pageLabel = document.createElement('span');
+    const nextPage = document.createElement('button'); nextPage.type = 'button'; nextPage.className = 'button button-quiet button-small'; nextPage.textContent = 'Next 100';
+    const pageCount = Math.ceil(state.preview.rowCount / 100);
+    const startRow = state.preview.previewRows[0]?.rowNumber || 0;
+    const endRow = state.preview.previewRows.at(-1)?.rowNumber || 0;
+    const recordStart = state.preview.previewOffset + 1;
+    const recordEnd = state.preview.previewOffset + state.preview.previewRows.length;
+    const pageSummary = (reviewed = state.reviewedPages.size) => `Records ${recordStart}–${recordEnd} of ${state.preview.rowCount.toLocaleString()} · source lines ${startRow}–${endRow} · reviewed ${reviewed}/${pageCount} pages`;
+    pageLabel.textContent = pageSummary();
+    previousPage.disabled = !state.preview.hasPreviousPreviewRows; nextPage.disabled = !state.preview.hasMorePreviewRows;
+    const loadPreviewPage = async (offset) => {
+      previousPage.disabled = true; nextPage.disabled = true;
+      try { state.preview = await window.dashboard.previewFinanceStatement({ importId: state.importId, mapping: state.mapping, fallbackCurrency: state.fallbackCurrency, accountLabel: state.accountLabel, offset }); renderPreviewView(); }
+      catch (error) { hint.textContent = error.message; previousPage.disabled = false; nextPage.disabled = false; }
+    };
+    previousPage.addEventListener('click', () => loadPreviewPage(Math.max(0, state.preview.previewOffset - 100)));
+    nextPage.addEventListener('click', () => loadPreviewPage(state.preview.previewOffset + 100));
+    pageControls.append(previousPage, pageLabel, nextPage);
+    const renderPreviewTable = () => {
+      tableWrap.replaceChildren(); const table = document.createElement('table');
+      const thead = document.createElement('thead'); const headRow = document.createElement('tr');
+      for (const titleText of ['Import', 'Row', 'Date', 'Description', 'Category', 'Amount', 'Review']) { const th = document.createElement('th'); th.textContent = titleText; headRow.append(th); }
+      thead.append(headRow); table.append(thead); const tbody = document.createElement('tbody');
+      for (const row of state.preview.previewRows) {
+        const tr = document.createElement('tr');
+        const selection = document.createElement('td'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+        const defaultIncluded = row.valid && (state.keepPossibleDuplicates || !row.possibleDuplicate);
+        if (row.valid) state.rowPossibleDuplicates[row.rowNumber] = row.possibleDuplicate;
+        checkbox.checked = Object.hasOwn(state.rowOverrides, row.rowNumber) ? state.rowOverrides[row.rowNumber] : defaultIncluded;
+        checkbox.disabled = !row.valid;
+        checkbox.addEventListener('change', () => { state.rowOverrides[row.rowNumber] = checkbox.checked; state.reviewedPages.delete(state.preview.previewOffset); pageReview.checked = false; void window.dashboard.reviewFinanceStatementPage({ importId: state.importId, offset: state.preview.previewOffset, acknowledged: false, keepPossibleDuplicates: state.keepPossibleDuplicates }); updateImportAction(); }); selection.append(checkbox); tr.append(selection);
+        for (const cellValue of [row.rowNumber, row.date || '—', row.description || (row.raw || []).join(' · '), row.category || '—', row.valid ? `${row.direction === 'income' ? '+' : '−'}${financeCurrency(row.amount, row.currency)}` : '—']) {
+          const td = document.createElement('td'); td.textContent = String(cellValue); tr.append(td);
+        }
+        const stateCell = document.createElement('td'); stateCell.textContent = !row.valid ? row.reason : row.possibleDuplicate ? 'Possible match in this ledger or this file' : 'Ready'; tr.append(stateCell); tbody.append(tr);
+      }
+      table.append(tbody); tableWrap.append(table);
+    };
+    const pageReviewLabel = document.createElement('label'); pageReviewLabel.className = 'finance-review-checkbox';
+    const pageReview = document.createElement('input'); pageReview.type = 'checkbox'; pageReview.checked = state.reviewedPages.has(state.preview.previewOffset);
+    const pageReviewCopy = document.createElement('span'); pageReviewCopy.textContent = 'I reviewed this page, including rows that need attention'; pageReviewLabel.append(pageReview, pageReviewCopy);
+    pageReview.addEventListener('change', async () => {
+      pageReview.disabled = true;
+      try {
+        const rowOverrides = Object.fromEntries(state.preview.previewRows.filter((row) => row.valid && Object.hasOwn(state.rowOverrides, row.rowNumber)).map((row) => [row.rowNumber, state.rowOverrides[row.rowNumber]]));
+        const result = await window.dashboard.reviewFinanceStatementPage({ importId: state.importId, offset: state.preview.previewOffset, acknowledged: pageReview.checked, keepPossibleDuplicates: state.keepPossibleDuplicates, rowOverrides });
+        if (pageReview.checked) state.reviewedPages.add(state.preview.previewOffset); else state.reviewedPages.delete(state.preview.previewOffset);
+        pageLabel.textContent = pageSummary(result.reviewedPages);
+      } catch (error) { pageReview.checked = false; hint.textContent = error.message; }
+      pageReview.disabled = false; updateImportAction();
+    });
+    const updateImportAction = () => {
+      const baseline = state.preview.validCount - (state.keepPossibleDuplicates ? 0 : state.preview.duplicateCount);
+      const delta = Object.entries(state.rowOverrides).reduce((sum, [rowNumber, included]) => {
+        const isDuplicate = state.rowPossibleDuplicates[rowNumber];
+        if (isDuplicate === undefined) return sum;
+        const defaultIncluded = state.keepPossibleDuplicates || !isDuplicate;
+        return sum + (Number(included) - Number(defaultIncluded));
+      }, 0);
+      const included = Math.max(0, Math.min(state.preview.validCount, baseline + delta));
+      const reviewedAllPages = state.reviewedPages.size >= pageCount;
+      nextPage.disabled = !state.preview.hasMorePreviewRows || !state.reviewedPages.has(state.preview.previewOffset);
+      importButton.textContent = reviewedAllPages ? `Import ${included} rows` : `Review all pages (${state.reviewedPages.size}/${pageCount})`;
+      importButton.disabled = included === 0 || !reviewedAllPages;
+    };
+    const errorRows = state.preview.previewRows.filter((row) => !row.valid);
+    const moreInvalid = state.preview.invalidCount > errorRows.length;
+    const hint = document.createElement('p'); hint.className = 'finance-import-review-hint'; hint.textContent = `Possible duplicates start unchecked. Invalid rows are excluded; ${state.preview.invalidCount} row${state.preview.invalidCount === 1 ? '' : 's'} need attention.`;
+    content.append(heading, counts, settings, hint, pageControls, tableWrap, pageReviewLabel); renderPreviewTable();
+    if (moreInvalid) { const note = document.createElement('p'); note.className = 'finance-import-more-note'; note.textContent = 'Some invalid rows are listed on other pages. Review every page before importing.'; content.append(note); }
+    const back = document.createElement('button'); back.className = 'button button-secondary'; back.type = 'button'; back.textContent = 'Change mapping'; back.onclick = renderMappingView;
+    const importButton = document.createElement('button'); importButton.className = 'button button-primary'; importButton.type = 'button'; importButton.textContent = 'Import rows';
+    setFooter([cancel, back, importButton]); updateImportAction();
+    importButton.onclick = async () => {
+      importButton.disabled = true; importButton.textContent = 'Saving locally…';
+      try {
+        const receipt = await window.dashboard.importFinanceStatement({ importId: state.importId, keepPossibleDuplicates: state.keepPossibleDuplicates, rowOverrides: state.rowOverrides, accountLabel: state.accountLabel });
+        state.completed = true; state.importId = null; renderReceipt(receipt);
+      } catch (error) { importButton.disabled = false; importButton.textContent = 'Try import again'; hint.textContent = error.message; }
+    };
+  }
+
+  function renderReceipt(receipt) {
+    dialog.classList.remove('is-wide');
+    content.replaceChildren(); content.className = 'finance-import-dialog-content is-receipt';
+    const mark = document.createElement('div'); mark.className = 'finance-import-receipt-mark'; mark.innerHTML = '<i data-lucide="check" class="icon" aria-hidden="true"></i>'; renderIcons(mark);
+    const title = document.createElement('h3'); title.textContent = 'Statement imported';
+    const summary = document.createElement('p'); summary.textContent = `${receipt.importedCount} transaction${receipt.importedCount === 1 ? '' : 's'} added to your local ledger.`;
+    const detail = document.createElement('p'); detail.className = 'dialog-copy'; detail.textContent = `${receipt.skippedDuplicateCount} possible duplicates skipped · ${receipt.excludedCount || 0} rows unchecked · ${receipt.invalidCount} invalid rows left out. Source: ${receipt.filename}.`;
+    content.append(mark, title, summary, detail);
+    const done = document.createElement('button'); done.className = 'button button-primary'; done.type = 'button'; done.textContent = 'Done'; setFooter([done]);
+    done.onclick = async () => {
+      if (receipt.currencyCodes?.length && !receipt.currencyCodes.includes(financeCurrencyCode)) { financeCurrencyCode = receipt.currencyCodes[0]; localStorage.setItem('local-dashboard-finance-currency', financeCurrencyCode); }
+      const data = await window.dashboard.getPageData('finance'); financeTransactions = data.transactions || []; financeLastImportRun = data.lastImportRun; financeImportWorkflowEnabled = data.importWorkflowEnabled !== false;
+      if (currentPage === 'finance') renderFinance(financeTransactions, financeLastImportRun);
+      dialog.close();
+      if (currentPage === 'workflows') await reloadWorkflows();
+    };
+  }
+
+  chooseView();
+}
+
+function showFinanceTransactionForm() {
+  const form = document.createElement('form'); form.className = 'dialog-form';
+  form.innerHTML = `<label class="field field-wide">Description<input name="merchant" required maxlength="100" placeholder="e.g. Grocery store"></label>
+    <label class="field">Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+    <label class="field">Type<select name="direction"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+    <label class="field">Category<select name="category"><option>Groceries</option><option>Dining</option><option>Transport</option><option>Bills</option><option>Home</option><option>Subscriptions</option><option>Health</option><option>Shopping</option><option>Leisure</option><option>Gifts</option><option>Income</option><option>Other</option></select></label>
+    <label class="field">Date<input name="occurredAt" type="date" required></label>
+    <p class="dialog-copy field-wide">Saved to this device in ${financeCurrencyCode}. This entry is not sent to an online service.</p>`;
+  form.elements.occurredAt.value = localDateKey(new Date());
+  const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
+  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = 'Add transaction';
+  const dialog = openDialog('New transaction', form, [cancel, save]); cancel.addEventListener('click', () => dialog.close()); save.addEventListener('click', () => form.requestSubmit());
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault(); save.disabled = true;
+    try { await window.dashboard.createFinanceTransaction({ merchant: form.elements.merchant.value, amount: form.elements.amount.value, direction: form.elements.direction.value, category: form.elements.category.value, occurredAt: form.elements.occurredAt.value, currency: financeCurrencyCode }); dialog.close(); const data = await window.dashboard.getPageData('finance'); financeTransactions = data.transactions || []; financeLastImportRun = data.lastImportRun; renderFinance(financeTransactions, financeLastImportRun); }
+    catch (error) { window.alert(error.message); save.disabled = false; }
+  });
 }
 
 function localDateKey(date) {

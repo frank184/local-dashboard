@@ -473,6 +473,7 @@ html {
   scrollbar-width: thin;
   scrollbar-color: #b7c0b9 transparent;
 }
+html.is-workflows-page { overflow-y: auto; scrollbar-gutter: auto; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--color-canvas); }
 ::-webkit-scrollbar-thumb { min-height: 36px; border: 3px solid var(--color-canvas); border-radius: 999px; background: #b7c0b9; }
@@ -509,26 +510,141 @@ html {
 #page-root > .page-view { margin-top: 0; padding-top: 0; border-top: 0; }
 #page-root > .page-view > p:not(.eyebrow):not(.intro) { margin: 0 0 17px; color: #7a837d; font-size: 12px; }
 .page-view { min-height: calc(100vh - 145px); }
+#workflows { min-height: 0; }
 
-.workflow-list, .workflow-run-list { display: grid; gap: 8px; }
-.workflow-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: 10px; background: #fff; }
-.workflow-copy { display: grid; gap: 5px; min-width: 0; }
-.workflow-copy strong, .workflow-run-row strong { font-size: 11px; }
-.workflow-copy small, .workflow-run-row small { color: #89918b; font-size: 9px; }
-.workflow-actions { display: flex; gap: 7px; }
-.workflow-run-row { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.5fr) auto; align-items: center; gap: 14px; padding: 12px 15px; border: 1px solid var(--color-border); border-radius: 9px; background: #fff; }
+.workflows-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }
+.workflows-title-row h1 { margin-bottom: 0; }
+.workflows-title-row .button span { margin-left: 5px; color: var(--color-muted); }
+body.is-workflows-page { --workflow-rail-width: clamp(280px, 24vw, 360px); --workflow-content-right-pad: 56px; }
+body.is-workflows-page.is-workflow-sidepanel-collapsed { --workflow-rail-width: 42px; }
+.workflows-layout { display: block; margin-top: 27px; }
+.workflows-main { min-width: 0; margin-right: calc(var(--workflow-rail-width) - var(--workflow-content-right-pad) + 24px); }
+.is-workflows-page footer { margin-right: calc(var(--workflow-rail-width) - var(--workflow-content-right-pad) + 24px); }
+.workflow-right-rail { position: fixed; z-index: 2; top: 70px; right: 0; bottom: 0; width: var(--workflow-rail-width); min-width: 0; border-left: 1px solid #dce3dd; background: #fff; }
+.workflow-side-panel { display: grid; align-content: start; gap: 0; height: 100%; max-height: none; overflow-y: auto; padding: 23px 22px; }
+.workflow-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.workflow-panel-heading h2 { margin: 0 0 5px; font-size: 12px; }
+.workflow-panel-copy { margin: 10px 0 0; color: #536157; font-size: 10px; line-height: 1.5; }
+.workflow-sidepanel-toggle { flex: 0 0 auto; width: 26px; height: 26px; }
+.workflow-drawer-backdrop { display: none; }
+.workflow-right-rail.is-workflow-sidepanel-collapsed { overflow: hidden; }
+.workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-side-panel { padding: 10px 6px; }
+.workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-panel-heading { justify-content: center; }
+.workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-panel-heading > div,
+.workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-panel-copy,
+.workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-action-list,
+.workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-registry-footnote { display: none; }
+.workflows-section { min-width: 0; margin-bottom: 34px; }
+.workflows-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin: 0 0 12px; padding-bottom: 11px; border-bottom: 1px solid #dce3dd; }
+.workflows-section-heading h2 { margin: 0; font-size: 14px; }
+.workflows-section-heading p { margin: 5px 0 0; color: #66736a; font-size: 10px; }
+.workflow-list, .workflow-run-list { overflow: hidden; border: 1px solid #dce3dd; border-radius: 7px; background: #fff; }
+.workflow-count { color: #657168; font-size: 10px; white-space: nowrap; }
+.workflow-table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #fff; text-align: left; }
+.workflow-table thead { background: #f7f9f7; }
+.workflow-table thead th { padding: 12px 14px; border-bottom: 1px solid #dce3dd; color: #536157; font-size: 9px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
+.workflow-table td, .workflow-table tbody th { padding: 20px 14px; border-top: 1px solid #e1e7e2; vertical-align: middle; }
+.workflow-table tbody th { color: var(--color-text); font-size: 12px; font-weight: 600; letter-spacing: normal; text-align: left; text-transform: none; }
+.workflow-history-table th:first-child { width: 20%; }
+.workflow-history-table th:nth-child(2) { width: 42%; }
+.workflow-history-table th:nth-child(3) { width: 24%; }
+.workflow-history-table th:nth-child(4) { width: 14%; }
+.workflow-config-table th:first-child { width: 23%; }
+.workflow-config-table th:nth-child(2) { width: 22%; }
+.workflow-config-table th:nth-child(3) { width: 26%; }
+.workflow-config-table th:nth-child(4) { width: 12%; }
+.workflow-config-table th:nth-child(5) { width: 17%; }
+.workflow-copy { display: grid; gap: 6px; min-width: 0; }
+.workflow-copy strong, .workflow-run-row th { color: var(--color-text); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.workflow-copy small, .workflow-activity small, .workflow-trigger small { display: block; max-width: 520px; color: #536157; font-size: 10px; line-height: 1.5; }
+.workflow-activity strong { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 550; }
+.workflow-trigger strong { display: block; margin-bottom: 4px; color: #35443a; font-size: 10px; font-weight: 600; }
+.workflow-state { color: #536157; font-size: 10px; white-space: nowrap; }
+.workflow-state::before { display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: #a9afaa; content: ''; }
+.workflow-state.is-enabled::before { background: #5b9a70; }
+.workflow-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; }
+.workflow-action-link { border: 0; padding: 4px 0; color: var(--color-primary); background: transparent; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; }
+.workflow-action-link { white-space: nowrap; }
+.workflow-action-link.is-muted { color: #657168; font-weight: 500; }
+.workflow-action-link:disabled { color: #89918b; cursor: not-allowed; }
+.workflow-action-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.workflow-run-row th { text-align: left; overflow-wrap: anywhere; }
+.workflow-run-row td { color: #46554b; font-size: 10px; line-height: 1.5; }
+.workflow-run-row .workflow-run-details { overflow-wrap: anywhere; }
+.workflow-run-row td:nth-child(3) { white-space: normal; }
+.workflow-run-status { color: #46554b; font-size: 10px; text-transform: capitalize; white-space: nowrap; }
+.workflow-run-status::before { display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: #a9afaa; content: ''; }
+.workflow-run-status.is-succeeded::before { background: #5b9a70; }
+.workflow-run-status.is-failed::before { background: #cb7b62; }
+.workflow-run-status.is-cancelled::before { background: #a9afaa; }
+.workflow-empty-row td { height: 82px; color: #536157; font-size: 11px; }
+.workflow-action-empty { margin: 0; padding: 20px 0; color: #536157; font-size: 11px; line-height: 1.55; }
+.workflow-action-category { margin-top: 17px; }
+.workflow-action-category h3 { margin: 0; padding: 0 0 7px; border-bottom: 1px solid #dce3dd; color: #657168; font-size: 9px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.workflow-action-definition { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 72px; padding: 13px 0; border-bottom: 1px solid #e1e7e2; }
+.workflow-action-definition-copy { display: grid; gap: 6px; min-width: 0; }
+.workflow-action-definition-copy strong { color: #35443a; font-size: 10px; }
+.workflow-action-definition-copy small { color: #536157; font-size: 9px; line-height: 1.45; }
+.workflow-task-details { margin-top: 3px; }
+.workflow-task-details summary { width: fit-content; color: #476f57; font-size: 9px; font-weight: 600; cursor: pointer; }
+.workflow-task-metadata { display: grid; gap: 10px; margin: 12px 0 0; }
+.workflow-task-metadata > div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; }
+.workflow-task-metadata dt { color: #657168; font-size: 9px; font-weight: 600; }
+.workflow-task-metadata dd { margin: 0; color: #35443a; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.workflow-run-task { flex: 0 0 auto; margin-top: 1px; }
+.workflow-registry-footnote { margin: 16px 0 0; color: #536157; font-size: 9px; line-height: 1.5; }
 .integration-connection-card { grid-template-columns: 38px minmax(0,1fr) auto auto; }
 .integration-row-actions { display: flex; align-items: center; gap: 5px; }
 .task-edit-trigger { width: fit-content; border: 0; padding: 0; color: inherit; background: transparent; text-align: left; }
 .task-edit-trigger:hover strong { color: var(--color-primary); }
 .form-error { margin: 0; color: var(--color-danger); font-size: 10px; }
-@media (max-width: 900px) {
-  .workflow-card { grid-template-columns: minmax(0, 1fr) auto; }
-  .workflow-card > .badge { grid-column: 2; grid-row: 1; }
-  .workflow-actions { grid-column: 1 / -1; }
-  .workflow-run-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .workflow-run-row small { grid-column: 1; }
-  .workflow-run-row .badge { grid-column: 2; grid-row: 1 / span 2; }
+@media (max-width: 600px) {
+  .workflow-table th, .workflow-table td { padding-right: 8px; padding-left: 8px; }
+  .workflow-table thead th { font-size: 8px; letter-spacing: .03em; }
+  .workflow-table td, .workflow-table tbody th { padding-top: 15px; padding-bottom: 15px; }
+  .workflow-history-table th:first-child { width: 21%; }
+  .workflow-history-table th:nth-child(2) { width: 36%; }
+  .workflow-history-table th:nth-child(3) { width: 25%; }
+  .workflow-history-table th:nth-child(4) { width: 18%; }
+  .workflow-config-table th:first-child { width: 21%; }
+  .workflow-config-table th:nth-child(2) { width: 19%; }
+  .workflow-config-table th:nth-child(3) { width: 21%; }
+  .workflow-config-table th:nth-child(4) { width: 17%; }
+  .workflow-config-table th:nth-child(5) { width: 22%; }
+  .workflow-actions { gap: 3px 8px; }
+  .workflow-action-link { font-size: 9px; }
+  .finance-raw-sample table, .finance-import-preview-table table { min-width: 0; table-layout: fixed; }
+  .finance-raw-sample th, .finance-raw-sample td { overflow-wrap: anywhere; }
+  .finance-import-preview-table { overflow-x: hidden; }
+  .finance-import-preview-table th:nth-child(2), .finance-import-preview-table td:nth-child(2),
+  .finance-import-preview-table th:nth-child(5), .finance-import-preview-table td:nth-child(5) { display: none; }
+  .finance-import-preview-table th:first-child { width: 8%; }
+  .finance-import-preview-table th:nth-child(3) { width: 17%; }
+  .finance-import-preview-table th:nth-child(4) { width: 39%; }
+  .finance-import-preview-table th:nth-child(6) { width: 21%; }
+  .finance-import-preview-table th:nth-child(7) { width: 15%; }
+}
+@media (max-width: 920px) {
+  .workflows-main { margin-right: 0; }
+  .is-workflows-page footer { margin-right: 0; }
+  .workflow-drawer-backdrop:not([hidden]) { position: fixed; z-index: 29; inset: 70px 0 0; display: block; border: 0; background: rgba(24, 34, 28, .16); }
+  .workflow-right-rail { z-index: 30; top: 70px; width: min(360px, calc(100vw - 90px)); box-shadow: -12px 0 34px rgba(26, 40, 30, .16); }
+  .is-workflow-sidepanel-collapsed .workflow-right-rail { top: 50%; right: 0; bottom: auto; width: 38px; height: 38px; border-radius: 7px 0 0 7px; }
+  .workflow-right-rail.is-workflow-sidepanel-collapsed .workflow-side-panel { height: auto; padding: 5px; }
+}
+@media (max-width: 1180px) { body.is-workflows-page { --workflow-content-right-pad: 36px; } }
+@media (max-width: 1024px) { body.is-workflows-page { --workflow-content-right-pad: 28px; } }
+@media (max-width: 900px) { body.is-workflows-page { --workflow-content-right-pad: 24px; } }
+@media (max-width: 480px) {
+  .workflow-history-table th:first-child { width: 27%; }
+  .workflow-history-table th:nth-child(2) { width: 51%; }
+  .workflow-history-table th:nth-child(3) { display: none; }
+  .workflow-history-table th:nth-child(4) { width: 22%; }
+  .workflow-run-row td:nth-child(3) { display: none; }
+  .workflow-config-table th:first-child { width: 35%; }
+  .workflow-config-table th:nth-child(2) { width: 25%; }
+  .workflow-config-table th:nth-child(3), .workflow-config-table th:nth-child(4), .workflow-config-table td:nth-child(3), .workflow-config-table td:nth-child(4) { display: none; }
+  .workflow-config-table th:nth-child(5) { width: 40%; }
 }
 @media (max-width: 600px) {
   .integration-connection-card { grid-template-columns: 38px minmax(0,1fr) auto; }
@@ -556,6 +672,8 @@ html {
 @media (min-width: 1400px) {
   .integration-provider-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+@media (min-width: 1440px) { body.is-workflows-page { --workflow-content-right-pad: clamp(48px, 4vw, 72px); } }
+@media (min-width: 1800px) { body.is-workflows-page { --workflow-content-right-pad: clamp(64px, 5vw, 112px); } }
 .todo-empty { margin: 0; padding: 16px; color: #89918b; font-size: 10px; }
 
 @media (min-width: 1181px) {
@@ -628,14 +746,47 @@ html {
 :root[data-theme="dark"] .calendar-month-grid,
 :root[data-theme="dark"] .todo-list,
 :root[data-theme="dark"] .plugin-list-card,
+:root[data-theme="dark"] .finance-import-pipeline,
 :root[data-theme="dark"] .integration-provider-card,
 :root[data-theme="dark"] .integration-connection-card,
-:root[data-theme="dark"] .workflow-card,
-:root[data-theme="dark"] .workflow-run-row,
 :root[data-theme="dark"] .table-container {
   background-color: var(--color-surface) !important;
   border-color: var(--color-border) !important;
 }
+:root[data-theme="dark"] .workflow-list,
+:root[data-theme="dark"] .workflow-run-list,
+:root[data-theme="dark"] .workflow-table { background: var(--color-surface); }
+:root[data-theme="dark"] .workflow-table thead { background: var(--color-canvas); }
+:root[data-theme="dark"] .workflow-right-rail { background: var(--color-surface); border-color: var(--color-border); }
+:root[data-theme="dark"] .workflow-right-rail { box-shadow: 0 12px 34px rgba(0, 0, 0, .3); }
+:root[data-theme="dark"] .workflow-action-link.is-muted,
+:root[data-theme="dark"] .workflow-task-details summary { color: var(--color-primary); }
+:root[data-theme="dark"] .workflow-registry-footnote { border-color: var(--color-border); }
+:root[data-theme="dark"] .workflow-panel-copy,
+:root[data-theme="dark"] .workflow-registry-footnote,
+:root[data-theme="dark"] .workflow-task-metadata dd { color: var(--color-muted); }
+:root[data-theme="dark"] .workflow-table thead th,
+:root[data-theme="dark"] .workflow-copy small,
+:root[data-theme="dark"] .workflow-activity small,
+:root[data-theme="dark"] .workflow-trigger small,
+:root[data-theme="dark"] .workflow-run-row td,
+:root[data-theme="dark"] .workflow-state,
+:root[data-theme="dark"] .workflow-run-status,
+:root[data-theme="dark"] .workflow-count,
+:root[data-theme="dark"] .workflow-empty-row td,
+:root[data-theme="dark"] .workflow-action-category h3,
+:root[data-theme="dark"] .workflow-action-definition-copy small,
+:root[data-theme="dark"] .workflow-task-metadata dt { color: var(--color-muted); }
+:root[data-theme="dark"] .workflow-table tbody th,
+:root[data-theme="dark"] .workflow-copy strong,
+:root[data-theme="dark"] .workflow-trigger strong,
+:root[data-theme="dark"] .workflow-action-definition-copy strong { color: var(--color-text); }
+:root[data-theme="dark"] .workflow-list,
+:root[data-theme="dark"] .workflow-run-list,
+:root[data-theme="dark"] .workflows-section-heading,
+:root[data-theme="dark"] .workflow-action-category h3,
+:root[data-theme="dark"] .workflow-action-definition,
+:root[data-theme="dark"] .workflow-task-details { border-color: var(--color-border); }
 :root[data-theme="dark"] .topbar {
   color: var(--color-muted);
   background: rgba(18, 26, 21, .9);
@@ -1203,6 +1354,164 @@ body.is-calendar-page #page-root > .calendar-page { height: calc(100dvh - 40px);
 /* Fluid shell guardrails and the wide-screen dashboard layout. */
 html, body { max-width: 100%; }
 body:not(.is-calendar-page) { overflow-x: clip; }
+
+/* Finance feature */
+.finance-page { max-width: 1280px; margin: 0 auto; }
+.finance-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; }
+.finance-heading .intro { margin-bottom: 18px; }
+.finance-heading-actions { display: flex; align-items: center; gap: 15px; padding-top: 4px; }
+.finance-local-badge { display: inline-flex; align-items: center; gap: 7px; color: var(--color-muted); font-size: 10px; white-space: nowrap; }
+.finance-local-badge i { width: 7px; height: 7px; border-radius: 50%; background: var(--color-success); }
+.finance-period-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 4px 0 0; padding: 0 0 11px; border-bottom: 1px solid var(--color-border); }
+.finance-period-row > div { display: flex; align-items: baseline; gap: 10px; }
+.finance-period-row strong { font-size: 13px; font-weight: 620; }
+.finance-period-row > div span { color: var(--color-muted); font-size: 10px; }
+.finance-period-actions { display: flex; align-items: center; gap: 12px; }
+.finance-clear-samples { color: var(--color-muted); font-size: 9px; }
+#finance-ledger-badge[hidden], .finance-clear-samples[hidden], .finance-table-scroll[hidden] { display: none; }
+.finance-currency-control { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 9px; }
+.finance-currency-control select { min-width: 70px; padding: 5px 7px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); background: var(--color-surface); font-size: 9px; }
+.finance-import-pipeline { margin-top: 18px; padding: 15px 17px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.finance-import-pipeline-copy { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.finance-import-pipeline-copy .eyebrow { margin: 0 0 5px; font-size: 8px; }
+.finance-import-pipeline-copy h2 { margin: 0 0 4px; font-size: 13px; }
+.finance-import-pipeline-copy p { margin: 0; color: var(--color-muted); font-size: 9px; line-height: 1.5; }
+.finance-import-pipeline-copy > .badge { flex: 0 0 auto; margin-top: 4px; font-size: 8px; }
+.finance-import-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.finance-import-stages li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 2px 7px; min-width: 0; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-canvas); }
+.finance-import-stages li > span { grid-row: span 2; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; color: var(--color-primary); background: var(--color-primary-soft); font-size: 8px; font-weight: 650; }
+.finance-import-stages strong { overflow: hidden; font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.finance-import-stages small { overflow: hidden; color: var(--color-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.finance-import-dialog { width: min(560px, calc(100vw - 28px)); }
+.finance-import-dialog.is-wide { width: min(940px, calc(100vw - 28px)); }
+.finance-import-dialog .finance-import-dialog-content { max-height: min(68vh, 620px); overflow: auto; padding: 15px 19px 18px; }
+.finance-import-dialog-content > .dialog-copy { padding: 0; }
+.finance-import-privacy { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-primary); background: var(--color-primary-soft); }
+.finance-import-privacy > .icon { width: 17px; height: 17px; flex: 0 0 auto; }
+.finance-import-privacy strong, .finance-import-privacy small { display: block; }
+.finance-import-privacy strong { font-size: 10px; }
+.finance-import-privacy small { margin-top: 3px; color: var(--color-muted); font-size: 9px; }
+.finance-import-example { margin-top: 14px; padding: 12px; border: 1px dashed var(--color-border); border-radius: 8px; }
+.finance-import-example small { color: var(--color-muted); font-size: 8px; }
+.finance-import-example p { margin: 8px 0 0; color: var(--color-text); font-size: 9px; line-height: 1.5; }
+.finance-import-status { min-height: 15px; margin: 10px 0 0; color: var(--color-danger); font-size: 9px; }
+.finance-import-file-heading { display: flex; flex-direction: column; gap: 4px; margin-bottom: 13px; }
+.finance-import-file-heading strong { font-size: 12px; }
+.finance-import-file-heading small { color: var(--color-muted); font-size: 9px; }
+.finance-mapping-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.finance-mapping-field { display: grid; gap: 5px; min-width: 0; color: var(--color-muted); font-size: 9px; }
+.finance-mapping-field select, .finance-mapping-extras input, .finance-mapping-extras select { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); background: var(--color-surface); font-size: 9px; }
+.finance-mapping-extras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; margin-top: 12px; }
+.finance-mapping-extras .field { display: grid; gap: 5px; min-width: 0; color: var(--color-muted); font-size: 9px; }
+.finance-mapping-extras .field small { font-size: 8px; font-weight: 400; }
+.finance-preview-label { margin: 14px 0 7px; color: var(--color-text); font-size: 9px; font-weight: 600; }
+.finance-raw-sample, .finance-import-preview-table { max-width: 100%; overflow: auto; border: 1px solid var(--color-border); border-radius: 7px; }
+.finance-raw-sample table, .finance-import-preview-table table { width: 100%; border-collapse: collapse; font-size: 8px; }
+.finance-raw-sample th, .finance-raw-sample td, .finance-import-preview-table th, .finance-import-preview-table td { max-width: 230px; padding: 7px 8px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: top; }
+.finance-raw-sample td, .finance-import-preview-table td { color: var(--color-muted); overflow-wrap: anywhere; }
+.finance-raw-sample th, .finance-import-preview-table th { position: sticky; top: 0; z-index: 1; color: var(--color-muted); background: var(--color-canvas); font-size: 7px; font-weight: 600; text-transform: uppercase; }
+.finance-import-dialog-content.is-preview { display: grid; gap: 11px; }
+.finance-import-dialog-content.is-preview .finance-import-file-heading { margin: 0; }
+.finance-import-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.finance-import-count { display: flex; align-items: baseline; gap: 7px; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-canvas); }
+.finance-import-count strong { font-size: 15px; font-weight: 650; }
+.finance-import-count span { color: var(--color-muted); font-size: 8px; }
+.finance-import-count.success strong { color: var(--color-success); }
+.finance-import-count.warning strong { color: var(--color-warning); }
+.finance-import-count.danger strong { color: var(--color-danger); }
+.finance-import-review-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--color-muted); font-size: 8px; }
+.finance-review-checkbox { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text); font-size: 9px; }
+.finance-review-checkbox input, .finance-import-preview-table input { accent-color: var(--color-primary); }
+.finance-import-review-hint, .finance-import-more-note { margin: 0; color: var(--color-muted); font-size: 8px; line-height: 1.5; }
+.finance-import-page-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.finance-import-page-controls span { color: var(--color-muted); font-size: 8px; text-align: center; }
+.finance-import-preview-table { max-height: 330px; }
+.finance-import-preview-table table { min-width: 680px; }
+.finance-import-preview-table td:first-child { width: 35px; }
+.finance-import-preview-table td:nth-child(3), .finance-import-preview-table td:nth-child(6) { white-space: nowrap; }
+.finance-import-dialog-content.is-receipt { display: grid; justify-items: center; gap: 9px; text-align: center; }
+.finance-import-receipt-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: var(--color-success); background: var(--color-success-soft); }
+.finance-import-receipt-mark .icon { width: 21px; height: 21px; }
+.finance-import-dialog-content.is-receipt h3 { margin: 2px 0 0; font-size: 14px; }
+.finance-import-dialog-content.is-receipt > p { margin: 0; font-size: 10px; }
+.finance-import-dialog-content.is-receipt > .dialog-copy { max-width: 520px; padding: 0; color: var(--color-muted); line-height: 1.5; }
+.finance-import-dialog .dialog-actions { flex-wrap: wrap; }
+.finance-period-row .badge { font-size: 8px; }
+.finance-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--color-border); padding: 17px 0 19px; }
+.finance-summary-card { display: grid; gap: 6px; min-width: 0; padding: 0 20px; border-right: 1px solid var(--color-border); }
+.finance-summary-card:first-child { padding-left: 0; }
+.finance-summary-card:last-child { border-right: 0; }
+.finance-summary-card > span { color: var(--color-muted); font-size: 10px; }
+.finance-summary-card > strong { font-size: 23px; font-weight: 620; letter-spacing: -.45px; }
+.finance-summary-card > strong.is-over-plan { color: var(--color-danger); }
+.finance-summary-card > small { color: var(--color-muted); font-size: 9px; }
+.finance-summary-highlight > strong { color: var(--color-primary); }
+.finance-content-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .85fr); gap: 28px; }
+.finance-panel { min-width: 0; }
+.finance-trend-panel, .finance-category-panel { padding: 19px 0 20px; border-bottom: 1px solid var(--color-border); }
+.finance-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.finance-panel-heading h2 { margin: 0 0 5px; font-size: 14px; }
+.finance-panel-heading p { margin: 0; color: var(--color-muted); font-size: 10px; line-height: 1.5; }
+.finance-panel-heading p strong { color: var(--color-text); font-weight: 600; }
+.finance-source-label { flex: 0 0 auto; padding-top: 3px; color: var(--color-muted); font-size: 8px; letter-spacing: .07em; }
+.finance-chart-wrap { position: relative; height: 224px; margin-top: 12px; }
+.finance-chart-legend { display: flex; justify-content: center; gap: 18px; margin-top: 5px; color: var(--color-muted); font-size: 9px; }
+.finance-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.finance-chart-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
+.finance-chart-legend i.income { background: var(--color-primary); }
+.finance-chart-legend i.spending { background: var(--color-blue); }
+.finance-category-list { display: grid; gap: 11px; max-height: 267px; margin-top: 13px; overflow-y: auto; padding-right: 4px; }
+.finance-category-row { display: grid; gap: 5px; }
+.finance-category-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 9px; }
+.finance-category-top > span { color: var(--color-text); }
+.finance-category-top strong { color: var(--color-text); font-size: 9px; font-weight: 550; white-space: nowrap; }
+.finance-progress-track { height: 5px; overflow: hidden; border-radius: 99px; background: var(--color-primary-soft); }
+.finance-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--color-primary); }
+.finance-progress-track > span.is-over-plan { background: var(--color-danger); }
+.finance-transactions-panel { padding-top: 19px; }
+.finance-transactions-heading { align-items: center; margin-bottom: 12px; }
+.finance-transaction-count { color: var(--color-muted); font-size: 9px; white-space: nowrap; }
+.finance-table-scroll { overflow-x: auto; }
+.finance-table { width: 100%; border-collapse: collapse; text-align: left; }
+.finance-table th { padding: 8px 11px; border-bottom: 1px solid var(--color-border); color: var(--color-muted); font-size: 8px; font-weight: 550; text-transform: uppercase; letter-spacing: .045em; }
+.finance-table td { padding: 10px 11px; border-bottom: 1px solid var(--color-border); color: var(--color-text); font-size: 10px; white-space: nowrap; }
+.finance-table td:first-child { width: 38%; white-space: normal; }
+.finance-table td:first-child strong, .finance-table td:first-child small { display: block; }
+.finance-table td:first-child strong { font-weight: 560; }
+.finance-table td:first-child small { margin-top: 3px; color: var(--color-muted); font-size: 8px; }
+.finance-table th:first-child, .finance-table td:first-child { padding-left: 2px; }
+.finance-table th:last-child, .finance-table td:last-child { padding-right: 2px; }
+.finance-amount, .finance-amount-heading { text-align: right !important; font-variant-numeric: tabular-nums; }
+.finance-amount { font-weight: 560; }
+.finance-amount.is-income { color: var(--color-success); }
+.finance-empty-state { display: grid; justify-items: center; gap: 7px; padding: 35px 12px; color: var(--color-muted); font-size: 10px; }
+.finance-empty-state strong { color: var(--color-text); font-size: 12px; }
+.finance-data-note { display: flex; align-items: center; gap: 7px; margin: 13px 0 0; color: var(--color-muted); font-size: 9px; line-height: 1.5; }
+.finance-data-note .icon { width: 13px; height: 13px; flex: 0 0 auto; }
+
+@media (max-width: 900px) {
+  .finance-content-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .finance-category-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; max-height: none; overflow: visible; }
+}
+@media (max-width: 600px) {
+  .finance-heading { display: block; }
+  .finance-heading-actions { justify-content: space-between; flex-wrap: wrap; padding: 0 0 10px; }
+  .finance-period-row > div { display: grid; gap: 3px; }
+  .finance-summary-card { padding: 0 9px; }
+  .finance-summary-card > strong { font-size: clamp(16px, 5vw, 21px); }
+  .finance-category-list { grid-template-columns: minmax(0, 1fr); }
+  .finance-table th, .finance-table td { padding-right: 7px; padding-left: 7px; }
+  .finance-table th:nth-child(2), .finance-table td:nth-child(2) { display: none; }
+  .finance-table td:first-child { width: auto; }
+  .finance-source-label { white-space: normal; text-align: right; }
+  .finance-period-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .finance-import-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finance-mapping-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finance-mapping-extras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finance-import-dialog .finance-import-dialog-content { padding: 12px; }
+  .finance-import-review-options { align-items: flex-start; flex-direction: column; }
+  .finance-import-count { display: grid; gap: 2px; }
+}
 main, .content, #page-root, .page-view { min-width: 0; }
 .content { max-width: 1680px; }
 .health-measurement-grid { min-width: 0; }
@@ -1210,6 +1519,7 @@ main, .content, #page-root, .page-view { min-width: 0; }
 
 @media (min-width: 1440px) {
   .content { max-width: 2048px; padding-right: clamp(48px, 4vw, 72px); padding-left: clamp(48px, 4vw, 72px); }
+  body.is-workflows-page { --workflow-content-right-pad: clamp(48px, 4vw, 72px); }
   .health-measurement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(24px, 2.5vw, 48px); align-items: start; }
   .health-measurement-grid .health-story { min-width: 0; }
   .health-sleep-grid { column-gap: clamp(24px, 2.5vw, 48px); }
@@ -1221,6 +1531,7 @@ main, .content, #page-root, .page-view { min-width: 0; }
 
 @media (min-width: 1800px) {
   .content { padding-right: clamp(64px, 5vw, 112px); padding-left: clamp(64px, 5vw, 112px); }
+  body.is-workflows-page { --workflow-content-right-pad: clamp(64px, 5vw, 112px); }
   .integration-provider-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
@@ -1287,4 +1598,21 @@ main, .content, #page-root, .page-view { min-width: 0; }
   .calendar-app-title h1 { grid-column: 1; font-size: 19px; }
   .calendar-app-title .calendar-period { grid-column: 1; grid-row: 2; }
   .calendar-app-title .calendar-plugin-settings-link { grid-column: 2; grid-row: 1 / span 2; justify-self: end; }
+}
+
+@media (max-width: 600px) {
+  .finance-raw-sample table,
+  .finance-import-preview-table table { min-width: 0; table-layout: fixed; }
+  .finance-import-preview-table td:nth-child(3),
+  .finance-import-preview-table td:nth-child(6) { white-space: normal; overflow-wrap: anywhere; }
+  .finance-import-preview-table { overflow-x: hidden; }
+  .finance-import-preview-table th:nth-child(2), .finance-import-preview-table td:nth-child(2),
+  .finance-import-preview-table th:nth-child(5), .finance-import-preview-table td:nth-child(5) { display: none; }
+  .finance-import-preview-table th:first-child { width: 8%; }
+  .finance-import-preview-table th:nth-child(3) { width: 17%; }
+  .finance-import-preview-table th:nth-child(4) { width: 39%; }
+  .finance-import-preview-table th:nth-child(6) { width: 21%; }
+  .finance-import-preview-table th:nth-child(7) { width: 15%; }
+  .workflow-run-status { white-space: normal; overflow-wrap: anywhere; }
+  .workflow-run-status::before { margin-right: 4px; }
 }

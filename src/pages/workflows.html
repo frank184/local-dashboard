@@ -1,9 +1,26 @@
 <section class="page-view" id="workflows">
   <p class="eyebrow">BACKGROUND WORK</p>
-  <h1>Workflows</h1>
-  <p class="intro">Local jobs run on this device. Scheduled jobs check in while the app is open.</p>
-  <div class="integration-section-heading"><div><h2>Configured workflows</h2><p>Runs are attached to their source integrations.</p></div><span id="workflow-count" class="badge badge-neutral">0 workflows</span></div>
-  <div id="workflow-list" class="workflow-list"></div>
-  <div class="integration-section-heading available-integrations-heading"><div><h2>Recent runs</h2><p>Local execution history and imported record counts.</p></div></div>
-  <div id="workflow-run-list" class="workflow-run-list"></div>
+  <div class="workflows-title-row"><h1>Workflows</h1></div>
+  <p class="intro">Run history and automation rules for work happening on this device.</p>
+  <div class="workflows-layout">
+    <div class="workflows-main">
+      <section class="workflows-section">
+        <div class="workflows-section-heading"><div><h2>Recent runs</h2><p>Local execution history across plugins and actions.</p></div><span id="workflow-run-count" class="workflow-count">0 runs</span></div>
+        <div id="workflow-run-list" class="workflow-run-list"></div>
+      </section>
+      <section class="workflows-section automation-section">
+        <div class="workflows-section-heading"><div><h2>Scheduled &amp; event rules</h2><p>Adjust schedule intervals; plugin-defined event triggers can be paused or resumed.</p></div><span id="workflow-count" class="workflow-count">0 rules</span></div>
+        <div id="workflow-list" class="workflow-list"></div>
+      </section>
+    </div>
+  </div>
+  <button class="workflow-drawer-backdrop" type="button" data-workflow-sidepanel-backdrop aria-label="Close task registry"></button>
+  <aside class="workflow-right-rail" aria-label="Task registry">
+    <section class="workflow-side-panel">
+      <div class="workflow-panel-heading"><div><h2>Task registry</h2><span id="workflow-action-count" class="workflow-count">0 tasks</span></div><button class="icon-button workflow-sidepanel-toggle" type="button" data-workflow-sidepanel-toggle aria-label="Collapse task registry" title="Collapse task registry" aria-expanded="true"><i data-lucide="chevron-right" class="icon" aria-hidden="true"></i></button></div>
+      <p class="workflow-panel-copy">On demand actions registered by plugins.</p>
+      <div id="workflow-action-list" class="workflow-action-list"></div>
+      <p class="workflow-registry-footnote">Runs stay on this device and appear in local history.</p>
+    </section>
+  </aside>
 </section>
