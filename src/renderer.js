@@ -766,7 +766,7 @@ function renderIntegrations(integrations) {
     if (['google-calendar', 'outlook-calendar'].includes(integration.provider_id) && integration.has_credentials) {
       const reconnect = document.createElement('button'); reconnect.type = 'button'; reconnect.className = 'button button-secondary button-small'; reconnect.textContent = 'Reauthorize';
       const reconnectProvider = { ...provider, reconnectId: integration.id, accountLabel: integration.account_label, clientId: JSON.parse(integration.config_json || '{}').clientId || provider.clientId };
-      reconnect.addEventListener('click', () => integration.provider_id === 'google-calendar' ? connectGoogleCalendarDirect(reconnectProvider, reconnect) : showIntegrationForm(reconnectProvider)); actions.append(reconnect);
+      reconnect.addEventListener('click', () => integration.provider_id === 'google-calendar' ? connectGoogleCalendarDirect(reconnectProvider, reconnect) : connectOutlookCalendarDirect(reconnectProvider, reconnect)); actions.append(reconnect);
     }
     if (syncButton) actions.append(syncButton); actions.append(edit, toggle, remove);
     row.append(iconWrap, copy, status, actions); connectionList.append(row);
@@ -787,7 +787,7 @@ function renderIntegrations(integrations) {
     const availability = document.createElement('small'); availability.className = 'integration-provider-availability';
     availability.textContent = provider.unavailable ? 'Connector coming later' : provider.fitbit || provider.googleCalendar || provider.outlookCalendar ? `${accountCount} account${accountCount === 1 ? '' : 's'} connected` : 'Setup entry only';
     const connect = document.createElement('button'); connect.type = 'button'; connect.className = 'button button-secondary button-small'; connect.textContent = provider.unavailable ? 'Coming later' : provider.googleCalendar || provider.outlookCalendar ? 'Connect account' : accountCount ? 'Add another account' : provider.fitbit ? 'Connect Fitbit' : 'Add account'; connect.disabled = Boolean(provider.unavailable);
-    connect.addEventListener('click', () => provider.googleCalendar ? connectGoogleCalendarDirect(provider, connect) : showIntegrationForm(provider));
+    connect.addEventListener('click', () => provider.googleCalendar ? connectGoogleCalendarDirect(provider, connect) : provider.outlookCalendar ? connectOutlookCalendarDirect(provider, connect) : showIntegrationForm(provider));
     card.append(head, name, description, availability, connect); providerGrid.append(card);
   }
   if (!matchingProviders.length) {
@@ -875,6 +875,31 @@ async function showIntegrationCalendarsForm(integration) {
   showCalendarIntegrationSetup(integration, calendars);
 }
 
+async function connectOutlookCalendarDirect(provider, trigger) {
+  const originalText = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Waiting for Microsoft…';
+  try {
+    const connection = await window.dashboard.connectOutlookCalendar({ integrationId: provider.reconnectId });
+    const { integrations } = await window.dashboard.getPageData('integrations');
+    renderIntegrations(integrations);
+    showCalendarIntegrationSetup({
+      id: connection.id,
+      provider_id: provider.id,
+      display_name: provider.name,
+      account_label: connection.accountLabel,
+      email: connection.email,
+    }, connection.calendars, true);
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    if (trigger.isConnected) {
+      trigger.disabled = false;
+      trigger.textContent = originalText;
+    }
+  }
+}
+
 async function connectGoogleCalendarDirect(provider, trigger) {
   const originalText = trigger.textContent;
   trigger.disabled = true;
@@ -927,15 +952,8 @@ function escapeAttribute(value) {
 
 function showIntegrationForm(provider) {
   const form = document.createElement('form'); form.className = 'dialog-form';
-  if (provider.googleCalendar || provider.outlookCalendar) {
-    const isOutlook = Boolean(provider.outlookCalendar);
-    if (isOutlook) {
-      form.innerHTML = `<p class="dialog-copy field-wide">Register a Microsoft Entra application for accounts in any organization and personal Microsoft accounts. Add the <strong>Mobile and desktop applications</strong> platform with redirect URI <code>http://localhost</code>, enable public client flows, and grant delegated <code>User.Read</code> and <code>Calendars.Read</code>. Sign in first; you can label the account and choose its calendars next.</p>
-        <label class="field field-wide">Microsoft application (client) ID<input name="clientId" required maxlength="180" autocomplete="off"></label>`;
-      if (provider.clientId) form.elements.clientId.value = provider.clientId;
-    } else {
-      form.innerHTML = `<p class="dialog-copy field-wide">Google sign-in uses the app’s <code>GOOGLE_CALENDAR_CLIENT_ID</code> setting and requests read-only calendar access. Sign in first; you can label the account and choose its calendars next. Tokens stay in this device’s credential store.</p>`;
-    }
+  if (provider.googleCalendar) {
+    form.innerHTML = `<p class="dialog-copy field-wide">Google sign-in uses the app’s <code>GOOGLE_CALENDAR_CLIENT_ID</code> setting and requests read-only calendar access. Sign in first; you can label the account and choose its calendars next. Tokens stay in this device’s credential store.</p>`;
   } else if (provider.fitbit) {
     form.innerHTML = `<p class="dialog-copy field-wide">Fitbit’s legacy Web API is scheduled to shut down October 30, 2026. Create a Fitbit OAuth app, set its redirect URL to <code>http://127.0.0.1:53682/oauth/callback</code>, then enter its client ID. Sleep and weight access are requested. Tokens are kept in your desktop credential store.</p>
       <label class="field field-wide">Fitbit OAuth client ID<input name="clientId" required maxlength="120" autocomplete="off"></label>
@@ -945,19 +963,17 @@ function showIntegrationForm(provider) {
       <label class="field field-wide">Account label<input name="accountLabel" required maxlength="80" placeholder="Personal account"></label>`;
   }
   const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
-  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = provider.googleCalendar ? 'Connect with Google' : provider.outlookCalendar ? 'Connect with Microsoft' : provider.fitbit ? 'Authorize Fitbit' : 'Save setup';
+  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = provider.googleCalendar ? 'Connect with Google' : provider.fitbit ? 'Authorize Fitbit' : 'Save setup';
   const dialog = openDialog(`Add ${provider.name}`, form, [cancel, save]);
   cancel.addEventListener('click', () => dialog.close());
   save.addEventListener('click', () => form.requestSubmit());
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    save.disabled = true; save.textContent = provider.googleCalendar || provider.outlookCalendar || provider.fitbit ? 'Waiting for sign-in…' : 'Saving…';
+    save.disabled = true; save.textContent = provider.googleCalendar || provider.fitbit ? 'Waiting for sign-in…' : 'Saving…';
     try {
       const accountLabel = form.elements.accountLabel?.value.trim() || '';
-      if (provider.googleCalendar || provider.outlookCalendar) {
-        const connection = provider.googleCalendar
-          ? await window.dashboard.connectGoogleCalendar({ integrationId: provider.reconnectId })
-          : await window.dashboard.connectOutlookCalendar({ clientId: form.elements.clientId.value.trim(), integrationId: provider.reconnectId });
+      if (provider.googleCalendar) {
+        const connection = await window.dashboard.connectGoogleCalendar({ integrationId: provider.reconnectId });
         dialog.close();
         showCalendarIntegrationSetup({ id: connection.id, provider_id: provider.id, display_name: provider.name, account_label: connection.accountLabel, email: connection.email }, connection.calendars, true);
         return;
@@ -965,7 +981,7 @@ function showIntegrationForm(provider) {
       else if (provider.fitbit) await window.dashboard.connectFitbit({ clientId: form.elements.clientId.value.trim(), accountLabel, integrationId: provider.reconnectId });
       else await window.dashboard.addIntegration({ providerId: provider.id, displayName: provider.name, accountLabel, pluginId: provider.pluginId });
       dialog.close(); const { integrations } = await window.dashboard.getPageData('integrations'); renderIntegrations(integrations);
-    } catch (error) { window.alert(error.message); save.disabled = false; save.textContent = provider.googleCalendar ? 'Connect with Google' : provider.outlookCalendar ? 'Connect with Microsoft' : provider.fitbit ? 'Authorize Fitbit' : 'Save setup'; }
+    } catch (error) { window.alert(error.message); save.disabled = false; save.textContent = provider.googleCalendar ? 'Connect with Google' : provider.fitbit ? 'Authorize Fitbit' : 'Save setup'; }
   });
 }
 

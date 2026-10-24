@@ -21,10 +21,10 @@ const activeWorkflowRuns = new Set();
 const financeImportSessions = new Map();
 const financeStatementWorkflowId = 'workflow-finance-statement-import';
 
-function loadGoogleOAuthSettingsFromLocalEnv() {
+function loadOAuthSettingsFromLocalEnv() {
   try {
     const envFile = fs.readFileSync(path.join(__dirname, '../.env'), 'utf8');
-    for (const key of ['GOOGLE_CALENDAR_CLIENT_ID']) {
+    for (const key of ['GOOGLE_CALENDAR_CLIENT_ID', 'OUTLOOK_CALENDAR_CLIENT_ID']) {
       if (process.env[key]?.trim()) continue;
       const line = envFile.split(/\r?\n/).find((entry) => new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`).test(entry));
       if (!line) continue;
@@ -38,7 +38,7 @@ function loadGoogleOAuthSettingsFromLocalEnv() {
   }
 }
 
-loadGoogleOAuthSettingsFromLocalEnv();
+loadOAuthSettingsFromLocalEnv();
 
 // Electron does not currently recognize Hyprland/Omarchy as a Linux desktop
 // keyring environment. These sessions commonly expose GNOME Keyring through
@@ -213,8 +213,9 @@ function registerIpcHandlers() {
     if (!workflowId) throw new Error('No sync workflow is attached to this Google Calendar connection.');
     return executeGoogleCalendarWorkflow(workflowId);
   });
-  ipcMain.handle('dashboard:connect-outlook-calendar', async (_event, { clientId, integrationId }) => {
-    if (!clientId?.trim()) throw new Error('Enter the Microsoft application (client) ID first.');
+  ipcMain.handle('dashboard:connect-outlook-calendar', async (_event, { integrationId }) => {
+    const clientId = process.env.OUTLOOK_CALENDAR_CLIENT_ID;
+    if (!clientId?.trim()) throw new Error('Set OUTLOOK_CALENDAR_CLIENT_ID in your environment or local .env file before connecting Outlook Calendar.');
     if (!await safeStorage.isAsyncEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('OS credential storage is unavailable. Set up your desktop keyring before connecting Outlook.');
     const existing = integrationId ? Integration.find(integrationId) : null;
     if (integrationId && (!existing || existing.provider_id !== 'outlook-calendar')) throw new Error('Outlook Calendar connection not found.');

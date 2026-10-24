@@ -25,8 +25,9 @@ async function connectOutlookCalendar({ clientId }) {
     });
     const timeout = setTimeout(() => { server.close(); reject(new Error('Microsoft sign-in timed out.')); }, 180000);
     server.on('error', (error) => { clearTimeout(timeout); reject(new Error(`Could not open the Microsoft OAuth callback listener: ${error.message}`)); });
+    let redirectUri;
     server.listen(0, '127.0.0.1', async () => {
-      const redirectUri = `http://localhost:${server.address().port}`;
+      redirectUri = `http://localhost:${server.address().port}`;
       const authUrl = new URL(`${AUTHORITY}/authorize`);
       for (const [key, value] of Object.entries({
         client_id: clientId.trim(), response_type: 'code', redirect_uri: redirectUri,
