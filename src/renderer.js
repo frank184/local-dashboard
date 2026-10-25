@@ -1361,38 +1361,18 @@ function renderCalendarIntegrations(integrations) {
     name.title = group.length > 1 ? `${accountName} (${group.length} connections)` : accountName;
     account.append(name);
     for (const [childKey, calendar] of childCalendars) {
-      const calendarRow = document.createElement('div'); calendarRow.className = 'calendar-account-line calendar-child-line';
+      const calendarRow = document.createElement('label'); calendarRow.className = 'calendar-account-line calendar-child-line';
       const calendarColor = calendar.color && calendarColorNames.includes(calendar.color) ? calendar.color : calendarColorNames[[...childCalendars.keys()].indexOf(childKey) % calendarColorNames.length];
       const calendarToggle = document.createElement('input'); calendarToggle.className = `calendar-visibility-toggle color-${calendarColor}`; calendarToggle.type = 'checkbox'; calendarToggle.dataset.calendarSource = childKey;
       calendarToggle.checked = calendarSourceVisibility[childKey] !== false;
+      calendarToggle.title = `${calendarToggle.checked ? 'Hide' : 'Show'} ${calendar.display_label || calendar.summary}`;
       calendarColorsByVisibilityKey.set(childKey, calendarColor);
-      const colorPicker = document.createElement('details'); colorPicker.className = `calendar-color-picker color-${calendarColor}`;
-      const colorSummary = document.createElement('summary'); colorSummary.className = 'calendar-color-swatch'; colorSummary.textContent = '⋮'; colorSummary.title = 'Change calendar color'; colorSummary.setAttribute('aria-label', `Change ${calendar.display_label || calendar.summary} color`);
-      colorPicker.append(colorSummary);
-      const colorOptions = document.createElement('div'); colorOptions.className = 'calendar-color-options';
-      for (const color of calendarColorNames) {
-        const option = document.createElement('button'); option.type = 'button'; option.className = `calendar-color-option color-${color}`; option.title = `${color[0].toUpperCase()}${color.slice(1)}`; option.setAttribute('aria-label', `Set calendar color to ${color}`); option.setAttribute('aria-pressed', String(color === calendarColor));
-        option.addEventListener('click', async (clickEvent) => {
-          clickEvent.preventDefault();
-          try {
-            await window.dashboard.setIntegrationCalendarColor(calendar.id, color);
-            calendar.color = color;
-            calendarColorsByVisibilityKey.set(childKey, color);
-            calendarToggle.className = `calendar-visibility-toggle color-${color}`;
-            colorPicker.className = `calendar-color-picker color-${color}`;
-            colorOptions.querySelectorAll('.calendar-color-option').forEach((button) => button.setAttribute('aria-pressed', String(button === option)));
-            colorPicker.open = false;
-            renderCalendarBoard(calendarEvents);
-          } catch (error) { showToast(error.message || 'Could not save the calendar color.', 'error'); }
-        });
-        colorOptions.append(option);
-      }
-      colorPicker.append(colorOptions);
       const calendarName = document.createElement('span'); calendarName.className = 'calendar-account-name'; calendarName.textContent = calendar.display_label || calendar.summary;
       calendarName.title = calendar.display_label || calendar.summary;
-      calendarRow.append(calendarToggle, colorPicker, calendarName); account.append(calendarRow);
+      calendarRow.append(calendarToggle, calendarName); account.append(calendarRow);
       calendarToggle.addEventListener('change', () => {
         calendarSourceVisibility[childKey] = calendarToggle.checked;
+        calendarToggle.title = `${calendarToggle.checked ? 'Hide' : 'Show'} ${calendar.display_label || calendar.summary}`;
         renderCalendarBoard(calendarEvents);
       });
     }
