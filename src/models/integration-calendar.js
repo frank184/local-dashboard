@@ -45,6 +45,14 @@ class IntegrationCalendar extends ApplicationRecord {
     });
     return true;
   }
+
+  static setDisplayColor(calendarId, color) {
+    const allowed = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
+    if (!allowed.includes(color)) throw new Error('Choose a color from the calendar palette.');
+    const result = this.connection.prepare('UPDATE integration_calendars SET color = ? WHERE id = ?').run(color, calendarId);
+    if (!result.changes) throw new Error('Calendar not found.');
+    return true;
+  }
 }
 
 module.exports = { IntegrationCalendar };

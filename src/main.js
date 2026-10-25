@@ -247,6 +247,7 @@ function registerIpcHandlers() {
     select: ['id', 'integration_id', 'external_calendar_id', 'summary', 'display_label', 'timezone', 'color', 'selected', 'last_sync_at', 'sync_window_start', 'sync_window_end'], orderBy: 'summary',
   }).map((calendar) => calendar.toJSON()));
   ipcMain.handle('dashboard:set-integration-calendars', (_event, id, selections) => IntegrationCalendar.setIntegrationCalendarSelection(id, selections));
+  ipcMain.handle('dashboard:set-integration-calendar-color', (_event, id, color) => IntegrationCalendar.setDisplayColor(id, color));
   ipcMain.handle('dashboard:configure-calendar-integration', async (_event, id, { accountLabel, calendars }) => {
     const integration = Integration.find(id);
     if (!integration || !['google-calendar', 'outlook-calendar'].includes(integration.provider_id)) throw new Error('Calendar integration not found.');
@@ -432,7 +433,9 @@ function saveProviderCalendars(integrationId, calendars) {
     color: calendar.backgroundColor || null,
   })), {
     uniqueBy: ['integration_id', 'external_calendar_id'],
-    updateColumns: ['summary', 'timezone', 'color'],
+    // The color column is also the user's local display-color preference. Keep
+    // it when provider metadata refreshes so custom colors survive each sync.
+    updateColumns: ['summary', 'timezone'],
   });
   return IntegrationCalendar.where({ integration_id: integrationId }, {
     select: ['id', 'integration_id', 'external_calendar_id', 'summary', 'display_label', 'timezone', 'color', 'selected', 'last_sync_at', 'sync_window_start', 'sync_window_end'],

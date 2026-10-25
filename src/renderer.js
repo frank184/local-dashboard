@@ -147,6 +147,8 @@ let calendarMonthWheelLockedUntil = 0;
 const calendarSourceVisibility = {};
 const calendarIntegrationGroups = new Map();
 const calendarVisibilityGroups = new Map();
+const calendarColorsByVisibilityKey = new Map();
+const calendarColorNames = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
 let calendarView = 'week';
 let calendarEvents = [];
 let calendarSettings = { startHour: 0, endHour: 24 };
@@ -1119,7 +1121,12 @@ function renderCalendarBoard(events) {
     uniqueEvents.push(event);
     addCalendarEventIdentity(event, seenUids, seenBases);
   }
-  const visibleEvents = uniqueEvents;
+  const visibleEvents = uniqueEvents.map((event) => {
+    if (!event.calendarId || !event.integration_id) return event;
+    const key = calendarVisibilityGroups.get(`${event.integration_id}:${event.calendarId}`);
+    const color = key && calendarColorsByVisibilityKey.get(key);
+    return color ? { ...event, color } : event;
+  });
   renderCalendarMiniMonth();
   renderCalendarUpcoming(visibleEvents);
   const weekStart = calendarWeekStart(calendarDate);
@@ -1287,6 +1294,7 @@ function renderCalendarIntegrations(integrations) {
   summary.replaceChildren();
   calendarIntegrationGroups.clear();
   calendarVisibilityGroups.clear();
+  calendarColorsByVisibilityKey.clear();
   const calendarConnections = integrations.filter((item) => item.provider_id.includes('calendar'));
   const groupedConnections = new Map();
   for (const integration of calendarConnections) {
@@ -1301,50 +1309,57 @@ function renderCalendarIntegrations(integrations) {
   for (const [groupKey, group] of groupedConnections) {
     const integration = group[0];
     const account = document.createElement('div'); account.className = 'calendar-account-group';
-    const row = document.createElement('label'); row.className = 'calendar-account-line';
-    const toggle = document.createElement('input'); toggle.className = 'calendar-visibility-toggle'; toggle.type = 'checkbox'; toggle.dataset.calendarSource = groupKey;
     const childCalendars = new Map();
     for (const connection of group) {
       for (const calendar of connection.calendars || []) {
         if (!calendar.selected) continue;
         const childKey = `${groupKey}:calendar:${calendar.external_calendar_id}`;
         calendarVisibilityGroups.set(`${connection.id}:${calendar.external_calendar_id}`, childKey);
-        if (!childCalendars.has(childKey)) childCalendars.set(childKey, calendar);
+        if (!childCalendars.has(childKey)) childCalendars.set(childKey, { ...calendar, connectionId: connection.id });
       }
     }
-    const childKeys = [...childCalendars.keys()];
-    const childVisibility = childKeys.map((key) => calendarSourceVisibility[key] !== false);
-    toggle.checked = childVisibility.length ? childVisibility.every(Boolean) : calendarSourceVisibility[groupKey] !== false;
-    toggle.indeterminate = childVisibility.some(Boolean) && childVisibility.some((visible) => !visible);
-    const name = document.createElement('span'); name.className = 'calendar-account-name';
     const accountName = integration.account_label || (integration.provider_id === 'google-calendar' ? 'Google Calendar' : 'Outlook Calendar');
+    const name = document.createElement('div'); name.className = 'calendar-account-heading';
     name.textContent = accountName;
-    if (group.length > 1) name.title = `${accountName} (${group.length} connections)`;
-    row.append(toggle, name); account.append(row);
+    name.title = group.length > 1 ? `${accountName} (${group.length} connections)` : accountName;
+    account.append(name);
     for (const [childKey, calendar] of childCalendars) {
-      const calendarRow = document.createElement('label'); calendarRow.className = 'calendar-account-line calendar-child-line';
-      const calendarToggle = document.createElement('input'); calendarToggle.className = 'calendar-visibility-toggle'; calendarToggle.type = 'checkbox'; calendarToggle.dataset.calendarSource = childKey;
+      const calendarRow = document.createElement('div'); calendarRow.className = 'calendar-account-line calendar-child-line';
+      const calendarColor = calendar.color && calendarColorNames.includes(calendar.color) ? calendar.color : calendarColorNames[[...childCalendars.keys()].indexOf(childKey) % calendarColorNames.length];
+      const calendarToggle = document.createElement('input'); calendarToggle.className = `calendar-visibility-toggle color-${calendarColor}`; calendarToggle.type = 'checkbox'; calendarToggle.dataset.calendarSource = childKey;
       calendarToggle.checked = calendarSourceVisibility[childKey] !== false;
+      calendarColorsByVisibilityKey.set(childKey, calendarColor);
+      const colorPicker = document.createElement('details'); colorPicker.className = `calendar-color-picker color-${calendarColor}`;
+      const colorSummary = document.createElement('summary'); colorSummary.className = 'calendar-color-swatch'; colorSummary.textContent = '⋮'; colorSummary.title = 'Change calendar color'; colorSummary.setAttribute('aria-label', `Change ${calendar.display_label || calendar.summary} color`);
+      colorPicker.append(colorSummary);
+      const colorOptions = document.createElement('div'); colorOptions.className = 'calendar-color-options';
+      for (const color of calendarColorNames) {
+        const option = document.createElement('button'); option.type = 'button'; option.className = `calendar-color-option color-${color}`; option.title = `${color[0].toUpperCase()}${color.slice(1)}`; option.setAttribute('aria-label', `Set calendar color to ${color}`); option.setAttribute('aria-pressed', String(color === calendarColor));
+        option.addEventListener('click', async (clickEvent) => {
+          clickEvent.preventDefault();
+          try {
+            await window.dashboard.setIntegrationCalendarColor(calendar.id, color);
+            calendar.color = color;
+            calendarColorsByVisibilityKey.set(childKey, color);
+            calendarToggle.className = `calendar-visibility-toggle color-${color}`;
+            colorPicker.className = `calendar-color-picker color-${color}`;
+            colorOptions.querySelectorAll('.calendar-color-option').forEach((button) => button.setAttribute('aria-pressed', String(button === option)));
+            colorPicker.open = false;
+            renderCalendarBoard(calendarEvents);
+          } catch (error) { showToast(error.message || 'Could not save the calendar color.', 'error'); }
+        });
+        colorOptions.append(option);
+      }
+      colorPicker.append(colorOptions);
       const calendarName = document.createElement('span'); calendarName.className = 'calendar-account-name'; calendarName.textContent = calendar.display_label || calendar.summary;
       calendarName.title = calendar.display_label || calendar.summary;
-      calendarRow.append(calendarToggle, calendarName); account.append(calendarRow);
+      calendarRow.append(calendarToggle, colorPicker, calendarName); account.append(calendarRow);
       calendarToggle.addEventListener('change', () => {
         calendarSourceVisibility[childKey] = calendarToggle.checked;
-        const visible = childKeys.map((key) => calendarSourceVisibility[key] !== false);
-        toggle.checked = visible.length ? visible.every(Boolean) : calendarSourceVisibility[groupKey] !== false;
-        toggle.indeterminate = visible.some(Boolean) && visible.some((value) => !value);
         renderCalendarBoard(calendarEvents);
       });
     }
     summary.append(account);
-    toggle.addEventListener('change', () => {
-      if (childKeys.length) {
-        for (const childKey of childKeys) calendarSourceVisibility[childKey] = toggle.checked;
-      } else calendarSourceVisibility[groupKey] = toggle.checked;
-      toggle.indeterminate = false;
-      for (const calendarToggle of account.querySelectorAll('.calendar-child-line .calendar-visibility-toggle')) calendarToggle.checked = toggle.checked;
-      renderCalendarBoard(calendarEvents);
-    });
   }
   if (!calendarConnections.length) {
     const empty = document.createElement('p'); empty.className = 'calendar-no-accounts'; empty.textContent = 'Connect calendars to see them here.'; summary.append(empty);

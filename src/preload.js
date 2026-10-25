@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('dashboard', Object.freeze({
   syncOutlookCalendar: (id) => ipcRenderer.invoke('dashboard:sync-outlook-calendar', id),
   getIntegrationCalendars: (id) => ipcRenderer.invoke('dashboard:get-integration-calendars', id),
   setIntegrationCalendars: (id, selections) => ipcRenderer.invoke('dashboard:set-integration-calendars', id, selections),
+  setIntegrationCalendarColor: (id, color) => ipcRenderer.invoke('dashboard:set-integration-calendar-color', id, color),
   configureCalendarIntegration: (id, settings) => ipcRenderer.invoke('dashboard:configure-calendar-integration', id, settings),
   createCalendarEvent: (event) => ipcRenderer.invoke('dashboard:create-calendar-event', event),
   updateCalendarEvent: (event) => ipcRenderer.invoke('dashboard:update-calendar-event', event),
