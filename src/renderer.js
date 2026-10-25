@@ -1088,27 +1088,32 @@ function updateCalendarCurrentTimeIndicator() {
   const now = new Date();
   const todayKey = localDateKey(now);
   const todayColumn = [...grid.querySelectorAll('.calendar-day-column')].find((column) => column.dataset.calendarDate === todayKey);
-  grid.querySelectorAll('.calendar-current-time-indicator').forEach((indicator) => {
-    if (indicator.parentElement !== todayColumn) indicator.remove();
-  });
-  if (!todayColumn) return;
+  let indicator = grid.querySelector('.calendar-current-time-indicator');
+  if (!todayColumn) { indicator?.remove(); return; }
 
   const { startHour, endHour } = normalizeCalendarSettings(calendarSettings);
   const minutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60 - startHour * 60;
   const visibleMinutes = (endHour - startHour) * 60;
   if (minutes < 0 || minutes >= visibleMinutes) {
-    todayColumn.querySelector('.calendar-current-time-indicator')?.remove();
+    indicator?.remove();
     return;
   }
 
-  let indicator = todayColumn.querySelector('.calendar-current-time-indicator');
   if (!indicator) {
     indicator = document.createElement('div');
     indicator.className = 'calendar-current-time-indicator';
     indicator.setAttribute('role', 'img');
-    todayColumn.append(indicator);
+    const currentDaySegment = document.createElement('span');
+    currentDaySegment.className = 'calendar-current-time-day-segment';
+    indicator.append(currentDaySegment);
+    grid.append(indicator);
   }
   indicator.style.top = `${minutes * (64 / 60)}px`;
+  const timeColumnWidth = grid.querySelector('.calendar-time-column')?.offsetWidth || 45;
+  indicator.style.left = `${timeColumnWidth}px`;
+  const currentDaySegment = indicator.querySelector('.calendar-current-time-day-segment');
+  currentDaySegment.style.left = `${todayColumn.offsetLeft - timeColumnWidth}px`;
+  currentDaySegment.style.width = `${todayColumn.offsetWidth}px`;
   indicator.setAttribute('aria-label', `Current time, ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)}`);
   indicator.title = `Current time · ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)}`;
 }
