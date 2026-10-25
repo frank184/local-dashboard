@@ -916,7 +916,6 @@ body.is-workflows-page.is-workflow-sidepanel-collapsed { --workflow-rail-width: 
 
 /* Give routed pages the full main-column width as the navigation rail collapses. */
 @media (max-width: 1000px) {
-  .plugin-card-grid { grid-template-columns: minmax(0, 1fr); }
   .integration-connection-card { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .integration-connection-card > .integration-row-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
@@ -1528,6 +1527,7 @@ main, .content, #page-root, .page-view { min-width: 0; }
   .content { padding-right: clamp(64px, 5vw, 112px); padding-left: clamp(64px, 5vw, 112px); }
   body.is-workflows-page { --workflow-content-right-pad: clamp(64px, 5vw, 112px); }
   .integration-provider-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .plugin-card-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 480px) {
@@ -1575,7 +1575,7 @@ main, .content, #page-root, .page-view { min-width: 0; }
 
 .workflow-actions { align-items: center; gap: 4px; }
 .workflow-config-table th:last-child { width: 17%; }
-.workflow-actions { flex-wrap: nowrap; justify-content: center; gap: 3px; }
+.workflow-actions { flex-wrap: nowrap; justify-content: flex-end; gap: 4px; white-space: nowrap; }
 .workflow-icon-action { display: grid; place-items: center; flex: 0 0 29px; width: 29px; height: 29px; border: 1px solid transparent; border-radius: 6px; color: var(--color-primary); background: transparent; cursor: pointer; }
 .workflow-icon-action:hover:not(:disabled) { border-color: var(--color-border); background: var(--color-canvas); }
 .workflow-icon-action.is-muted { color: var(--color-muted); }
@@ -1583,10 +1583,9 @@ main, .content, #page-root, .page-view { min-width: 0; }
 .workflow-icon-action:disabled { opacity: .5; cursor: not-allowed; }
 .workflow-icon-action:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 @media (max-width: 1120px) {
-  .workflow-config-table th:last-child { width: 68px; }
-  .workflow-config-table td, .workflow-config-table tbody th { padding-top: 13px; padding-bottom: 13px; }
-  .workflow-config-table td:last-child { padding-right: 4px; padding-left: 4px; }
-  .workflow-actions { flex-direction: column; align-items: flex-end; gap: 0; }
+  .workflow-config-table th:last-child { width: 112px; }
+  .workflow-config-table td:last-child { padding-right: 6px; padding-left: 6px; }
+  .workflow-config-table td:last-child .workflow-actions { flex-direction: row; flex-wrap: nowrap; justify-content: flex-end; gap: 3px; white-space: nowrap; }
 }
 @media (min-width: 1121px) {
   .workflow-config-table th:nth-child(3) { width: 23%; }
@@ -1596,6 +1595,11 @@ main, .content, #page-root, .page-view { min-width: 0; }
 /* Plugin cards share the integrations grid, with their primary state control in the footer. */
 .plugin-list-card { display: grid; grid-template-rows: auto 1fr auto; min-height: 188px; padding: 16px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .plugin-list-card-top { min-width: 0; }
+.plugin-card-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 3px; }
+.plugin-card-action { width: 28px; height: 28px; color: var(--color-muted); }
+.plugin-card-action:hover { color: var(--color-primary); }
+.plugin-card-action.is-danger { color: var(--color-danger); }
+.plugin-card-action.is-danger:hover { color: var(--color-danger); background: var(--color-danger-soft); }
 .plugin-list-card .plugin-card-identity { min-width: 0; }
 .plugin-list-card .plugin-card-identity > div { min-width: 0; }
 .plugin-list-card .plugin-card-identity h3 { overflow-wrap: anywhere; }

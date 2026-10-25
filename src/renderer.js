@@ -576,33 +576,17 @@ function renderPlugins(plugins) {
     identity.append(icon, titleBlock);
     top.append(identity);
     if (plugin.installed) {
-      const menuButton = document.createElement('button');
-      menuButton.className = 'icon-button plugin-menu-trigger';
-      menuButton.type = 'button';
-      menuButton.setAttribute('aria-label', `Manage ${plugin.name}`);
-      const dots = document.createElement('i'); dots.className = 'icon'; dots.dataset.lucide = 'more-horizontal';
-      menuButton.append(dots);
-      const menu = document.createElement('div');
-      menu.className = 'plugin-action-menu';
-      menu.hidden = true;
-      menuButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        pageRoot.querySelectorAll('.plugin-action-menu').forEach((item) => { if (item !== menu) item.hidden = true; });
-        menu.hidden = !menu.hidden;
-      });
-      menu.append(menuAction('Edit details', 'pencil', () => showPluginForm(plugin)));
-      menu.append(menuAction('Delete plugin', 'trash-2', async () => {
-        menu.hidden = true;
+      const cardActions = document.createElement('div');
+      cardActions.className = 'plugin-card-actions';
+      cardActions.append(pluginCardAction(`Edit ${plugin.name}`, 'pencil', () => showPluginForm(plugin)));
+      cardActions.append(pluginCardAction(`Delete ${plugin.name}`, 'trash-2', async () => {
         const accepted = await showConfirm(`Delete ${plugin.name}?`, 'This uninstalls the plugin and removes it from navigation. Its local records will be kept.', 'Delete plugin');
         if (!accepted) return;
         await window.dashboard.uninstallPlugin(plugin.id);
         if (currentPage === plugin.id) window.location.hash = 'plugins';
         await refreshPluginData();
       }, true));
-      const menuWrap = document.createElement('div');
-      menuWrap.className = 'plugin-menu-wrap';
-      menuWrap.append(menuButton, menu);
-      top.append(menuWrap);
+      top.append(cardActions);
     } else {
       const install = document.createElement('button');
       install.className = 'button button-secondary button-small';
@@ -646,12 +630,14 @@ function renderPlugins(plugins) {
   renderIcons(list);
 }
 
-function menuAction(label, iconName, action, danger = false) {
+function pluginCardAction(label, iconName, action, danger = false) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = `plugin-action${danger ? ' is-danger' : ''}`;
+  button.className = `icon-button plugin-card-action${danger ? ' is-danger' : ''}`;
+  button.setAttribute('aria-label', label);
+  button.title = label;
   const icon = document.createElement('i'); icon.className = 'icon'; icon.dataset.lucide = iconName;
-  button.append(icon, document.createTextNode(label));
+  button.append(icon);
   button.addEventListener('click', action);
   return button;
 }
