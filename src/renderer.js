@@ -153,6 +153,7 @@ let calendarView = 'week';
 let calendarEvents = [];
 let calendarSettings = { startHour: 0, endHour: 24 };
 let calendarSidePanelCollapsed = false;
+let calendarClockTimer = null;
 let workflowSidePanelCollapsed = localStorage.getItem('local-dashboard-workflow-sidepanel-collapsed') === 'true';
 const themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 let themeChoice = localStorage.getItem('local-dashboard-theme') || 'system';
@@ -290,6 +291,8 @@ function renderPage(requestedPage) {
   destroyCharts();
   pageRoot.innerHTML = pageTemplates[pageId];
   currentPage = pageId;
+  if (calendarClockTimer) clearInterval(calendarClockTimer);
+  calendarClockTimer = pageId === 'calendar' ? setInterval(updateCalendarCurrentTimeIndicator, 30_000) : null;
   document.body.classList.toggle('is-calendar-page', pageId === 'calendar');
   document.body.classList.toggle('is-workflows-page', pageId === 'workflows');
   document.documentElement.classList.toggle('is-workflows-page', pageId === 'workflows');
@@ -1078,6 +1081,38 @@ function moveCalendar(direction) {
   renderCalendarBoard(calendarEvents);
 }
 
+function updateCalendarCurrentTimeIndicator() {
+  if (currentPage !== 'calendar' || calendarView !== 'week') return;
+  const grid = pageRoot.querySelector('.calendar-week-grid');
+  if (!grid) return;
+  const now = new Date();
+  const todayKey = localDateKey(now);
+  const todayColumn = [...grid.querySelectorAll('.calendar-day-column')].find((column) => column.dataset.calendarDate === todayKey);
+  grid.querySelectorAll('.calendar-current-time-indicator').forEach((indicator) => {
+    if (indicator.parentElement !== todayColumn) indicator.remove();
+  });
+  if (!todayColumn) return;
+
+  const { startHour, endHour } = normalizeCalendarSettings(calendarSettings);
+  const minutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60 - startHour * 60;
+  const visibleMinutes = (endHour - startHour) * 60;
+  if (minutes < 0 || minutes >= visibleMinutes) {
+    todayColumn.querySelector('.calendar-current-time-indicator')?.remove();
+    return;
+  }
+
+  let indicator = todayColumn.querySelector('.calendar-current-time-indicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.className = 'calendar-current-time-indicator';
+    indicator.setAttribute('role', 'img');
+    todayColumn.append(indicator);
+  }
+  indicator.style.top = `${minutes * (64 / 60)}px`;
+  indicator.setAttribute('aria-label', `Current time, ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)}`);
+  indicator.title = `Current time · ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)}`;
+}
+
 function renderCalendarBoard(events) {
   const board = pageRoot.querySelector('#calendar-board');
   if (!board) return;
@@ -1218,6 +1253,7 @@ function renderCalendarBoard(events) {
   grid.append(times);
   for (const date of weekDates) {
     const column = document.createElement('div'); column.className = 'calendar-day-column';
+    column.dataset.calendarDate = localDateKey(date);
     for (let hour = startHour; hour < endHour; hour += 1) { const slot = document.createElement('div'); slot.className = 'calendar-hour-slot'; column.append(slot); }
     for (const event of visibleEvents.filter((item) => !item.allDay && sameLocalDate(getEventStart(item), date))) {
       const start = getEventStart(event); const minutes = start.getHours() * 60 + start.getMinutes() - startHour * 60;
@@ -1234,6 +1270,7 @@ function renderCalendarBoard(events) {
     grid.append(column);
   }
   board.append(grid);
+  updateCalendarCurrentTimeIndicator();
 }
 
 

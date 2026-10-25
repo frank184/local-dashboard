@@ -1347,6 +1347,27 @@ body.is-calendar-page #page-root > .calendar-page { height: calc(100dvh - 40px);
 }
 .calendar-event-block small { font-size: 10px; line-height: 1.2; }
 .calendar-event-block.is-compact { align-content: center; gap: 0; padding: 3px 7px; }
+.calendar-current-time-indicator {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  left: 0;
+  height: 2px;
+  transform: translateY(-1px);
+  background: #292d2b;
+  pointer-events: none;
+}
+.calendar-current-time-indicator::before {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: inherit;
+  content: "";
+}
+:root[data-theme="dark"] .calendar-current-time-indicator { background: #e6ebe7; }
 .calendar-event-block.is-compact strong {
   display: block;
   font-size: 11px;
