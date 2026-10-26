@@ -6,6 +6,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "npm run build && electron .",
+    "start:inspect": "npm run build && node scripts/start-ui-harness.mjs",
+    "ui:harness": "node scripts/electron-ui-harness.mjs",
     "build": "vite build",
     "test": "node --test"
   },

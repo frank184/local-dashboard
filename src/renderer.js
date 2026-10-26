@@ -269,7 +269,17 @@ function renderIcons(root) {
 }
 
 function storedOrder(key) {
-  try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value : []; }
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved != null) { const value = JSON.parse(saved); return Array.isArray(value) ? value : []; }
+    if (key === 'local-dashboard-plugin-order') {
+      return [...new Set([
+        ...JSON.parse(localStorage.getItem('local-dashboard-plugin-catalog-order') || '[]'),
+        ...JSON.parse(localStorage.getItem('local-dashboard-feature-navigation-order') || '[]'),
+      ])];
+    }
+    const value = JSON.parse(saved || '[]'); return Array.isArray(value) ? value : [];
+  }
   catch { return []; }
 }
 
@@ -284,15 +294,18 @@ function enableNativeReordering(container, selector, getId, storageKey, handleSe
   if (container.dataset.reorderReady === 'true') return;
   container.dataset.reorderReady = 'true';
   let dragged = null;
+  let dropTarget = null;
   let handleArmed = !handleSelector;
   container.addEventListener('pointerdown', (event) => { handleArmed = !handleSelector || Boolean(event.target.closest(handleSelector)); }, true);
   container.addEventListener('dragstart', (event) => {
     const item = event.target.closest(selector);
-    if (!item || !container.contains(item) || (handleSelector && !handleArmed)) { event.preventDefault(); return; }
+    const collapsedNavigationDrag = container === featureNavigation && document.body.classList.contains('is-sidebar-collapsed');
+    if (!item || !container.contains(item) || (handleSelector && !handleArmed && !collapsedNavigationDrag)) { event.preventDefault(); return; }
     dragged = item;
     item.classList.add('is-dragging');
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', getId(item));
+    container.classList.add('has-reorder-drag');
   });
   container.addEventListener('dragover', (event) => {
     if (!dragged) return;
@@ -300,24 +313,44 @@ function enableNativeReordering(container, selector, getId, storageKey, handleSe
     if (!target || target === dragged || !container.contains(target)) return;
     event.preventDefault(); event.dataTransfer.dropEffect = 'move';
     const rect = target.getBoundingClientRect();
-    const sameRow = event.clientY >= rect.top + rect.height * .25 && event.clientY <= rect.bottom - rect.height * .25;
-    const insertBefore = sameRow ? event.clientX < rect.left + rect.width / 2 : event.clientY < rect.top + rect.height / 2;
+    const layout = getComputedStyle(container);
+    const isMultiColumnGrid = layout.display === 'grid' && layout.gridTemplateColumns.split(' ').length > 1;
+    const insertBefore = isMultiColumnGrid
+      ? event.clientX < rect.left + rect.width / 2
+      : event.clientY < rect.top + rect.height / 2;
+    dropTarget?.classList.remove('is-drop-before', 'is-drop-after');
+    dropTarget = target;
+    target.classList.add(insertBefore ? 'is-drop-before' : 'is-drop-after');
     container.insertBefore(dragged, insertBefore ? target : target.nextElementSibling);
   });
   container.addEventListener('drop', (event) => {
     if (!dragged) return;
     event.preventDefault();
-    if (storageKey) localStorage.setItem(storageKey, JSON.stringify([...container.querySelectorAll(selector)].map(getId)));
+    if (storageKey) {
+      const visibleIds = [...container.querySelectorAll(selector)].map(getId);
+      const previous = storedOrder(storageKey);
+      const visible = new Set(visibleIds);
+      let nextIndex = 0;
+      const merged = previous.map((id) => visible.has(id) ? visibleIds[nextIndex++] : id);
+      for (const id of visibleIds) if (!previous.includes(id)) merged.push(id);
+      localStorage.setItem(storageKey, JSON.stringify(merged.length ? merged : visibleIds));
+      if (storageKey === 'local-dashboard-plugin-order') {
+        void window.dashboard.getPageData('navigation').then(({ plugins }) => renderFeatureNavigation(plugins));
+      }
+    }
   });
   container.addEventListener('dragend', () => {
     dragged?.classList.remove('is-dragging');
     dragged = null;
+    dropTarget?.classList.remove('is-drop-before', 'is-drop-after');
+    dropTarget = null;
+    container.classList.remove('has-reorder-drag');
   });
 }
 
 function renderFeatureNavigation(plugins) {
   featureNavigation.replaceChildren();
-  const ordered = orderByStoredIds(plugins.filter((item) => featureRoutes.has(item.id)), 'local-dashboard-feature-navigation-order');
+  const ordered = orderByStoredIds(plugins.filter((item) => featureRoutes.has(item.id)), 'local-dashboard-plugin-order');
   for (const plugin of ordered) {
     pageTitles[plugin.id] = plugin.name;
     const link = document.createElement('a');
@@ -327,7 +360,7 @@ function renderFeatureNavigation(plugins) {
     const handle = document.createElement('span'); handle.className = 'nav-plugin-drag-handle'; handle.title = `Reorder ${plugin.name}`; handle.setAttribute('aria-hidden', 'true'); handle.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>';
     link.append(icon, label, handle); featureNavigation.append(link);
   }
-  enableNativeReordering(featureNavigation, '.nav-item[data-plugin-id]', (item) => item.dataset.pluginId, 'local-dashboard-feature-navigation-order', '.nav-plugin-drag-handle');
+  enableNativeReordering(featureNavigation, '.nav-item[data-plugin-id]', (item) => item.dataset.pluginId, 'local-dashboard-plugin-order', '.nav-plugin-drag-handle');
   renderIcons(featureNavigation);
 }
 
@@ -653,7 +686,7 @@ function renderPlugins(plugins) {
   const list = pageRoot.querySelector('#plugin-card-grid');
   if (!list) return;
   list.replaceChildren();
-  plugins = orderByStoredIds(plugins, 'local-dashboard-plugin-catalog-order');
+  plugins = orderByStoredIds(plugins, 'local-dashboard-plugin-order');
   const count = pageRoot.querySelector('#plugin-count');
   if (count) count.textContent = `${plugins.filter((plugin) => plugin.installed).length} installed`;
   for (const plugin of plugins) {
@@ -731,7 +764,7 @@ function renderPlugins(plugins) {
     card.append(top, description, footer);
     list.append(card);
   }
-  enableNativeReordering(list, '.plugin-list-card[data-plugin-id]', (card) => card.dataset.pluginId, 'local-dashboard-plugin-catalog-order', '.plugin-card-drag-handle');
+  enableNativeReordering(list, '.plugin-list-card[data-plugin-id]', (card) => card.dataset.pluginId, 'local-dashboard-plugin-order', '.plugin-card-drag-handle');
   renderIcons(list);
 }
 
@@ -1335,7 +1368,7 @@ function renderCalendarBoard(events) {
       cell.append(day);
       for (const event of visibleEvents.filter((item) => sameLocalDate(getEventStart(item), date)).slice(0, 3)) {
         const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-month-event color-${event.color || 'green'}`; block.textContent = event.title; addCalendarEventQuickDetails(block, event);
-        block.addEventListener('click', (click) => { click.stopPropagation(); openCalendarEvent(event); }); cell.append(block);
+        bindCalendarEventActions(block, event); cell.append(block);
       }
       grid.append(cell);
     }
@@ -1358,7 +1391,7 @@ function renderCalendarBoard(events) {
         const time = document.createElement('span'); time.textContent = event.allDay ? 'All day' : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(getEventStart(event));
         const title = document.createElement('strong'); title.textContent = event.title;
         const detail = document.createElement('small'); detail.textContent = event.detail || event.location || '';
-        row.append(time, title, detail); row.addEventListener('click', () => openCalendarEvent(event)); section.append(row);
+        row.append(time, title, detail); bindCalendarEventActions(row, event); section.append(row);
       }
       list.append(section);
     }
@@ -1380,7 +1413,8 @@ function renderCalendarBoard(events) {
     const cell = document.createElement('div'); cell.className = 'calendar-all-day-cell'; cell.dataset.calendarDate = localDateKey(date);
     for (const event of visibleEvents.filter((item) => item.allDay && sameLocalDate(getEventStart(item), date))) {
       const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-all-day-event color-${event.color || 'blue'}`; block.textContent = event.title; addCalendarEventQuickDetails(block, event);
-      block.addEventListener('click', () => openCalendarEvent(event)); attachCalendarEventDrag(block, event); cell.append(block);
+      bindCalendarEventActions(block, event);
+      attachCalendarEventDrag(block, event); cell.append(block);
     }
     allDayRow.append(cell);
   }
@@ -1412,7 +1446,9 @@ function renderCalendarBoard(events) {
       block.style.top = `${minutes * hourScale}px`; block.style.height = `${visibleDuration * hourScale}px`;
       const title = document.createElement('strong'); title.textContent = event.title;
       const time = document.createElement('small'); time.textContent = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start);
-      block.append(title, time); block.addEventListener('click', () => openCalendarEvent(event)); attachCalendarEventDrag(block, event); column.append(block);
+      block.append(title, time);
+      bindCalendarEventActions(block, event);
+      attachCalendarEventDrag(block, event); column.append(block);
     }
     grid.append(column);
   }
@@ -1465,6 +1501,49 @@ function openCalendarEvent(event) {
   showEventForm(event);
 }
 
+function bindCalendarEventActions(element, event) {
+  element.addEventListener('click', (click) => {
+    click.stopPropagation();
+    showCalendarEventMenu(event, click.clientX, click.clientY);
+  });
+  element.addEventListener('contextmenu', (click) => {
+    click.preventDefault(); click.stopPropagation();
+    showCalendarEventMenu(event, click.clientX, click.clientY);
+  });
+}
+
+function showCalendarEventMenu(event, clientX, clientY) {
+  document.querySelector('.calendar-event-menu')?.remove();
+  const menu = document.createElement('div'); menu.className = 'calendar-event-menu'; menu.setAttribute('role', 'menu');
+  const title = document.createElement('strong'); title.className = 'calendar-event-menu-title'; title.textContent = event.title;
+  const time = document.createElement('small'); time.textContent = event.allDay
+    ? 'All day'
+    : `${new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(getEventStart(event))} · ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(getEventStart(event))}`;
+  const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'calendar-event-menu-action'; edit.setAttribute('role', 'menuitem');
+  edit.textContent = event.isRecurringOccurrence ? 'Workout options' : 'Edit event';
+  edit.addEventListener('click', () => { menu.remove(); document.removeEventListener('pointerdown', dismiss, true); openCalendarEvent(event); });
+  menu.append(title, time, edit);
+  if (!event.isRecurringOccurrence && event.source_plugin_id === 'calendar') {
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'calendar-event-menu-action is-danger'; remove.setAttribute('role', 'menuitem'); remove.textContent = 'Delete event';
+    remove.addEventListener('click', async () => {
+      menu.remove(); document.removeEventListener('pointerdown', dismiss, true);
+      if (!window.confirm(`Delete “${event.title}”?`)) return;
+      await window.dashboard.deleteCalendarEvent(event.id); await reloadCalendar();
+    });
+    menu.append(remove);
+  }
+  const dismiss = (pointer) => { if (!menu.contains(pointer.target)) { menu.remove(); document.removeEventListener('pointerdown', dismiss, true); } };
+  document.body.append(menu);
+  const { width, height } = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - height - 8))}px`;
+  document.addEventListener('pointerdown', dismiss, true);
+  menu.addEventListener('keydown', (keydown) => {
+    if (keydown.key === 'Escape') { menu.remove(); document.removeEventListener('pointerdown', dismiss, true); }
+  });
+  edit.focus({ preventScroll: true });
+}
+
 function calendarDragTargetAt(clientX, clientY) {
   const element = document.elementFromPoint(clientX, clientY);
   const allDayCell = element?.closest('.calendar-all-day-cell[data-calendar-date]');
@@ -1479,7 +1558,9 @@ function snapCalendarDrop(event, target) {
   const { startHour, endHour } = normalizeCalendarSettings(calendarSettings);
   const bounds = target.element.getBoundingClientRect();
   const minutesFromTop = Math.max(0, (target.clientY - bounds.top) * (60 / 64));
-  const minuteOfDay = Math.max(startHour * 60, Math.min(endHour * 60 - 15, startHour * 60 + Math.round(minutesFromTop / 15) * 15));
+  let minuteOfDay = Math.max(startHour * 60, Math.min(endHour * 60 - 15, startHour * 60 + Math.round(minutesFromTop)));
+  const nearestHalfHour = Math.round(minuteOfDay / 30) * 30;
+  if (Math.abs(nearestHalfHour - minuteOfDay) <= 2) minuteOfDay = nearestHalfHour;
   const hour = Math.floor(minuteOfDay / 60); const minute = minuteOfDay % 60;
   const startAt = `${target.date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
   const routine = event.fitnessRoutineId ? getFitnessRoutines().find((item) => item.id === event.fitnessRoutineId) : null;
@@ -1493,7 +1574,7 @@ function snapCalendarDrop(event, target) {
 function attachCalendarEventDrag(block, event) {
   if (calendarView !== 'week' || event.integration_id || event.source_plugin_id !== 'calendar') return;
   if (event.isRecurringOccurrence && (!event.fitnessRoutineId || !getFitnessRoutines().some((routine) => routine.id === event.fitnessRoutineId))) return;
-  const state = { timer: null, pointerId: null, startX: 0, startY: 0, ready: false, ghost: null, target: null, suppressClick: false };
+  const state = { timer: null, pointerId: null, startX: 0, startY: 0, lastX: 0, lastY: 0, offsetX: 0, offsetY: 0, ready: false, ghost: null, target: null, suppressClick: false };
   block.classList.add('is-hold-draggable');
   block.addEventListener('click', (click) => {
     if (!state.suppressClick) return;
@@ -1509,25 +1590,32 @@ function attachCalendarEventDrag(block, event) {
   };
   block.addEventListener('pointerdown', (pointer) => {
     if (pointer.button !== 0 || state.pointerId !== null) return;
-    state.pointerId = pointer.pointerId; state.startX = pointer.clientX; state.startY = pointer.clientY; state.ready = false;
+    const rect = block.getBoundingClientRect();
+    state.pointerId = pointer.pointerId; state.startX = pointer.clientX; state.startY = pointer.clientY; state.lastX = pointer.clientX; state.lastY = pointer.clientY;
+    state.offsetX = pointer.clientX - rect.left; state.offsetY = pointer.clientY - rect.top; state.ready = false;
     block.classList.add('is-holding-to-drag');
     block.style.setProperty('--drag-hold-duration', `${event.allDay ? 1500 : 1000}ms`);
     try { block.setPointerCapture(pointer.pointerId); } catch {}
     state.timer = setTimeout(() => {
-      state.ready = true; state.ghost = block.cloneNode(true); state.ghost.removeAttribute('id'); state.ghost.className = `${block.className} calendar-event-drag-ghost`; state.ghost.style.width = `${block.getBoundingClientRect().width}px`; document.body.append(state.ghost); block.classList.add('is-drag-source');
+      state.ready = true; state.ghost = block.cloneNode(true); state.ghost.removeAttribute('id'); state.ghost.className = `${block.className} calendar-event-drag-ghost`;
+      state.ghost.style.width = `${rect.width}px`; state.ghost.style.left = `${state.lastX - state.offsetX}px`; state.ghost.style.top = `${state.lastY - state.offsetY}px`;
+      document.body.append(state.ghost); block.classList.add('is-drag-source');
     }, event.allDay ? 1500 : 1000);
   });
   block.addEventListener('pointermove', (pointer) => {
     if (pointer.pointerId !== state.pointerId) return;
+    state.lastX = pointer.clientX; state.lastY = pointer.clientY;
     if (!state.ready) {
-      if (Math.hypot(pointer.clientX - state.startX, pointer.clientY - state.startY) > 9) clearHold();
+      if (Math.hypot(pointer.clientX - state.startX, pointer.clientY - state.startY) > 9) {
+        clearHold(); state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 700);
+      }
       return;
     }
     pointer.preventDefault();
-    state.ghost.style.left = `${pointer.clientX + 12}px`; state.ghost.style.top = `${pointer.clientY + 12}px`;
+    state.ghost.style.left = `${pointer.clientX - state.offsetX}px`; state.ghost.style.top = `${pointer.clientY - state.offsetY}px`;
     const target = calendarDragTargetAt(pointer.clientX, pointer.clientY);
     if (state.target !== target?.element) { state.target?.classList.remove('is-drop-target'); state.target = target?.element || null; state.target?.classList.add('is-drop-target'); }
-    block._calendarDropTarget = target;
+    block._calendarDropTarget = target ? { ...target, clientY: pointer.clientY - state.offsetY } : null;
   });
   block.addEventListener('pointerup', async (pointer) => {
     if (pointer.pointerId !== state.pointerId) return;
@@ -1648,7 +1736,7 @@ function renderCalendarUpcoming(events) {
       time.textContent = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start);
       date.append(time);
     }
-    const button = document.createElement('button'); button.type = 'button'; button.className = `calendar-upcoming-event color-${event.color || 'blue'}`; button.textContent = event.title || '(Untitled event)'; addCalendarEventQuickDetails(button, event); button.addEventListener('click', () => openCalendarEvent(event));
+    const button = document.createElement('button'); button.type = 'button'; button.className = `calendar-upcoming-event color-${event.color || 'blue'}`; button.textContent = event.title || '(Untitled event)'; addCalendarEventQuickDetails(button, event); bindCalendarEventActions(button, event);
     row.append(date, button); list.append(row);
   }
 }
