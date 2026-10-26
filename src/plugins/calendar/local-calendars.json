@@ -1,0 +1,14 @@
+{
+  "account": {
+    "id": "local-dashboard",
+    "name": "Local Dashboard"
+  },
+  "calendars": [
+    { "id": "local", "name": "Personal", "color": "blue" },
+    { "id": "local-fitness", "name": "Fitness", "color": "green" },
+    { "id": "local-finance", "name": "Finance", "color": "yellow" },
+    { "id": "local-health", "name": "Health", "color": "teal" },
+    { "id": "local-goals", "name": "Goals", "color": "purple" },
+    { "id": "local-projects", "name": "Projects", "color": "orange" }
+  ]
+}

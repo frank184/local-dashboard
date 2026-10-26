@@ -22,7 +22,16 @@ class Integration extends ApplicationRecord {
   }
   static removeIntegration(id) {
     return this.transaction(() => {
-      this.connection.prepare('UPDATE data_records SET integration_id = NULL WHERE integration_id = ?').run(id);
+      const integration = this.connection.prepare('SELECT provider_id FROM integrations WHERE id = ?').get(id);
+      if (integration && ['google-calendar', 'outlook-calendar'].includes(integration.provider_id)) {
+        // Imported calendar events belong to their connection. Once it is
+        // removed they must not become indistinguishable from local events.
+        this.connection.prepare("DELETE FROM data_records WHERE integration_id = ? AND record_type = 'calendar_events'").run(id);
+      } else {
+        // Keep non-calendar history (for example health metrics) locally when
+        // its provider is disconnected.
+        this.connection.prepare('UPDATE data_records SET integration_id = NULL WHERE integration_id = ?').run(id);
+      }
       this.connection.prepare('UPDATE integrations SET sync_workflow_id = NULL WHERE id = ?').run(id);
       this.connection.prepare('DELETE FROM workflows WHERE integration_id = ?').run(id);
       const removed = this.connection.prepare('DELETE FROM integrations WHERE id = ?').run(id).changes > 0;

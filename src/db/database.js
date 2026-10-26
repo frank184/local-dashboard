@@ -4,6 +4,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 const builtInPlugins = ['calendar', 'todos', 'health', 'finance'].map((id) =>
   JSON.parse(fs.readFileSync(path.join(__dirname, '../plugins', id, 'manifest.json'), 'utf8')));
+const localCalendarModel = JSON.parse(fs.readFileSync(path.join(__dirname, '../plugins/calendar/local-calendars.json'), 'utf8'));
 const bundledIntegrations = ['google-calendar', 'outlook-calendar', 'fitbit'].map((id) =>
   JSON.parse(fs.readFileSync(path.join(__dirname, '../integrations', id, 'manifest.json'), 'utf8')));
 const connectorPlugins = [
@@ -333,14 +334,14 @@ function seedBuiltIns(db) {
     monday.setHours(0, 0, 0, 0);
     monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
     const allDayExamples = [
-      ['plan-week', 0, 'Plan the week', 'blue'],
-      ['project-milestone', 2, 'Project milestone', 'purple'],
-      ['no-meetings', 4, 'No meetings', 'orange'],
+      ['plan-week', 0, 'Plan the week', 'personal', 'blue'],
+      ['project-milestone', 2, 'Project milestone', 'milestone', 'orange'],
+      ['no-meetings', 4, 'No meetings', 'focus', 'purple'],
     ];
     const addAllDayEvent = db.prepare(`INSERT OR IGNORE INTO data_records
       (id, domain_id, record_type, source_plugin_id, external_id, occurred_at, payload_json)
       VALUES (?, 'personal-productivity', 'calendar_events', 'calendar', ?, ?, ?)`);
-    for (const [id, offset, title, color] of allDayExamples) {
+    for (const [id, offset, title, category, color] of allDayExamples) {
       const date = new Date(monday);
       date.setDate(date.getDate() + offset);
       const day = localDayKey(date);
@@ -348,7 +349,7 @@ function seedBuiltIns(db) {
       addAllDayEvent.run(recordId, id, day, JSON.stringify({
         title,
         detail: 'Sample all-day event',
-        category: 'personal',
+        category,
         startAt: day,
         endAt: day,
         allDay: true,
@@ -356,6 +357,81 @@ function seedBuiltIns(db) {
       }));
     }
     db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-calendar-all-day-v1', '1')").run();
+  }
+
+  // Normalize legacy sample metadata before adding calendar membership.
+  const calendarCategorySeed = db.prepare("SELECT value FROM app_meta WHERE key = 'starter-calendar-event-categories-v1'").get();
+  if (!calendarCategorySeed) {
+    const update = db.prepare(`UPDATE data_records SET payload_json = json_set(payload_json, '$.category', ?, '$.color', ?)
+      WHERE source_plugin_id = 'calendar' AND external_id = ? AND record_type = 'calendar_events'`);
+    for (const [externalId, category, color] of [
+      ['plan-week', 'planning', 'blue'], ['project-milestone', 'milestone', 'orange'], ['no-meetings', 'focus', 'purple'],
+      ['walk', 'routine', 'green'], ['focus', 'focus', 'purple'], ['lunch', 'meeting', 'blue'], ['workout', 'routine', 'teal'],
+    ]) update.run(category, color, externalId);
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-calendar-event-categories-v1', '1')").run();
+  }
+
+  const localCalendarSeed = db.prepare("SELECT value FROM app_meta WHERE key = 'starter-local-calendar-account-v1'").get();
+  if (!localCalendarSeed) {
+    const calendarByEvent = [
+      ['plan-week', 'local', 'planning'], ['project-milestone', 'local-projects', 'milestone'], ['no-meetings', 'local', 'focus'],
+      ['walk', 'local-health', 'routine'], ['focus', 'local', 'focus'], ['lunch', 'local', 'meeting'], ['workout', 'local-fitness', 'routine'],
+    ];
+    const updateEventCalendar = db.prepare(`UPDATE data_records SET payload_json = json_set(payload_json,
+      '$.calendarId', ?, '$.calendarName', ?, '$.calendarColor', ?, '$.accountId', 'local-dashboard', '$.accountName', 'Local Dashboard', '$.category', ?)
+      WHERE source_plugin_id = 'calendar' AND external_id = ? AND record_type = 'calendar_events'`);
+    for (const [externalId, calendarId, category] of calendarByEvent) {
+      const calendar = localCalendarModel.calendars.find((item) => item.id === calendarId);
+      if (calendar) updateEventCalendar.run(calendar.id, calendar.name, calendar.color, category, externalId);
+    }
+
+    const insertLocalCalendarEvent = db.prepare(`INSERT OR IGNORE INTO data_records
+      (id, domain_id, record_type, source_plugin_id, external_id, occurred_at, payload_json)
+      VALUES (?, 'personal-productivity', 'calendar_events', 'calendar', ?, ?, ?)`);
+    const atDay = (days) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + days); return localDayKey(date); };
+    const samples = [
+      ['fitness-run', 'local-fitness', 1, 'Morning run', 'routine', '07:30:00', 45],
+      ['finance-rent', 'local-finance', 5, 'Rent due', 'reminder', null, null],
+      ['health-checkup', 'local-health', 8, 'Annual check-up', 'appointment', '10:00:00', 45],
+      ['goals-review', 'local-goals', 3, 'Monthly goals review', 'milestone', '17:00:00', 30],
+    ];
+    for (const [id, calendarId, days, title, category, time, duration] of samples) {
+      const calendar = localCalendarModel.calendars.find((item) => item.id === calendarId);
+      const day = atDay(days);
+      const startAt = time ? `${day}T${time}` : day;
+      const endAt = time ? new Date(new Date(startAt).getTime() + duration * 60_000).toISOString() : day;
+      const payload = {
+        title, detail: 'Local calendar example', category, startAt, endAt, allDay: !time,
+        calendarId, calendarName: calendar.name, calendarColor: calendar.color,
+        accountId: localCalendarModel.account.id, accountName: localCalendarModel.account.name,
+        color: calendar.color,
+      };
+      insertLocalCalendarEvent.run(`event-local-${id}`, `local-${id}`, startAt, JSON.stringify(payload));
+    }
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-local-calendar-account-v1', '1')").run();
+  }
+
+  const semanticCalendarCategories = db.prepare("SELECT value FROM app_meta WHERE key = 'starter-calendar-semantic-categories-v2'").get();
+  if (!semanticCalendarCategories) {
+    const updateCategory = db.prepare(`UPDATE data_records SET payload_json = json_set(payload_json, '$.category', ?)
+      WHERE source_plugin_id = 'calendar' AND external_id = ? AND record_type = 'calendar_events'`);
+    for (const [externalId, category] of [
+      ['plan-week', 'planning'], ['project-milestone', 'milestone'], ['no-meetings', 'focus'],
+      ['walk', 'routine'], ['focus', 'focus'], ['lunch', 'meeting'], ['workout', 'routine'],
+      ['local-fitness-run', 'routine'], ['local-finance-rent', 'reminder'],
+      ['local-health-checkup', 'appointment'], ['local-goals-review', 'milestone'],
+    ]) updateCategory.run(category, externalId);
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('starter-calendar-semantic-categories-v2', '1')").run();
+  }
+
+  const neutralCalendarCategories = db.prepare("SELECT value FROM app_meta WHERE key = 'calendar-neutral-categories-v3'").get();
+  if (!neutralCalendarCategories) {
+    db.prepare(`UPDATE data_records SET payload_json = json_set(payload_json, '$.category', 'general')
+      WHERE source_plugin_id = 'calendar' AND record_type = 'calendar_events'
+        AND json_extract(payload_json, '$.category') = 'personal'`).run();
+    db.prepare(`UPDATE data_records SET payload_json = json_set(payload_json, '$.category', 'planning')
+      WHERE source_plugin_id = 'calendar' AND external_id = 'plan-week' AND record_type = 'calendar_events'`).run();
+    db.prepare("INSERT INTO app_meta (key, value) VALUES ('calendar-neutral-categories-v3', '1')").run();
   }
 
   const healthSeedVersion = db.prepare("SELECT value FROM app_meta WHERE key = 'starter-health-trends-v1'").get();
@@ -431,13 +507,18 @@ function seedBuiltIns(db) {
     insertRecord.run(id, domain, type, source, externalId, occurredAt, JSON.stringify(payload));
 
   const events = [
-    ['walk', `${localDayKey(new Date())}T08:30:00`, 'Morning walk', '30 minutes · Health plan', 'personal-health'],
-    ['focus', `${localDayKey(new Date())}T10:00:00`, 'Focus block', 'Work · 90 minutes', null],
-    ['lunch', `${localDayKey(new Date())}T13:00:00`, 'Lunch with Alex', 'Personal · 1 hour', null],
-    ['workout', `${localDayKey(new Date())}T17:30:00`, 'Strength workout', '45 minutes · Health plan', 'personal-health'],
+    ['walk', `${localDayKey(new Date())}T08:30:00`, 'Morning walk', '30 minutes · Health plan', 'routine', 'local-health'],
+    ['focus', `${localDayKey(new Date())}T10:00:00`, 'Focus block', 'Work · 90 minutes', 'focus', 'local'],
+    ['lunch', `${localDayKey(new Date())}T13:00:00`, 'Lunch with Alex', 'Personal · 1 hour', 'meeting', 'local'],
+    ['workout', `${localDayKey(new Date())}T17:30:00`, 'Strength workout', '45 minutes · Health plan', 'routine', 'local-fitness'],
   ];
-  for (const [id, time, title, detail, domain] of events) {
-    add(`event-${id}`, 'personal-productivity', 'calendar_events', 'calendar', id, time, { title, detail, category: domain || 'personal' });
+  for (const [id, time, title, detail, category, calendarId] of events) {
+    const calendar = localCalendarModel.calendars.find((item) => item.id === calendarId);
+    add(`event-${id}`, 'personal-productivity', 'calendar_events', 'calendar', id, time, {
+      title, detail, category, color: calendar.color,
+      calendarId: calendar.id, calendarName: calendar.name, calendarColor: calendar.color,
+      accountId: localCalendarModel.account.id, accountName: localCalendarModel.account.name,
+    });
   }
 
   const tasks = [

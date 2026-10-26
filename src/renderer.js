@@ -5,6 +5,7 @@ import workflowsPage from './pages/workflows.html?raw';
 import designSystemPage from './pages/design-system.html?raw';
 import { bundledPlugins, pluginPageTemplates, pluginPageTitles, pluginSettingsPageTemplates } from './plugins/registry.js';
 import { bundledIntegrations } from './integrations/registry.js';
+import localCalendarModel from './plugins/calendar/local-calendars.json';
 import {
   createIcons,
   Activity,
@@ -149,6 +150,18 @@ const calendarIntegrationGroups = new Map();
 const calendarVisibilityGroups = new Map();
 const calendarColorsByVisibilityKey = new Map();
 const calendarColorNames = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
+const calendarEventCategories = [
+  { value: 'task', label: 'Task' },
+  { value: 'planning', label: 'Planning' },
+  { value: 'focus', label: 'Focus time' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'routine', label: 'Routine' },
+  { value: 'appointment', label: 'Appointment' },
+  { value: 'reminder', label: 'Reminder' },
+  { value: 'milestone', label: 'Milestone' },
+  { value: 'general', label: 'General' },
+];
+const calendarCategoryAliases = { personal: 'general', work: 'focus', health: 'appointment', 'personal-health': 'appointment', finance: 'reminder', goal: 'milestone', project: 'milestone' };
 let calendarView = 'week';
 let calendarEvents = [];
 let calendarSettings = { startHour: 0, endHour: 24 };
@@ -1122,6 +1135,11 @@ function renderCalendarBoard(events) {
   const board = pageRoot.querySelector('#calendar-board');
   if (!board) return;
   board.replaceChildren();
+  events = events.map((event) => {
+    if (event.integration_id || event.calendarId) return event;
+    const calendar = localCalendarModel.calendars.find((item) => item.id === 'local');
+    return { ...event, calendarId: calendar.id, calendarName: calendar.name, calendarColor: calendar.color, accountId: localCalendarModel.account.id, accountName: localCalendarModel.account.name };
+  });
   board.classList.toggle('calendar-board-week', calendarView === 'week');
   board.classList.toggle('calendar-board-month', calendarView === 'month');
   const period = pageRoot.querySelector('.calendar-period');
@@ -1162,9 +1180,14 @@ function renderCalendarBoard(events) {
     addCalendarEventIdentity(event, seenUids, seenBases);
   }
   const visibleEvents = uniqueEvents.map((event) => {
-    if (!event.calendarId || !event.integration_id) return event;
-    const key = calendarVisibilityGroups.get(`${event.integration_id}:${event.calendarId}`);
-    const color = key && calendarColorsByVisibilityKey.get(key);
+    const key = event.integration_id && event.calendarId
+      ? calendarVisibilityGroups.get(`${event.integration_id}:${event.calendarId}`)
+      : null;
+    // A connected calendar owns its display color. Events created in the
+    // built-in Local calendar use semantic category colors; future plugin
+    // calendars can provide their own color without changing event category.
+    const color = (key && calendarColorsByVisibilityKey.get(key))
+      || event.calendarColor || event.color || 'blue';
     return color ? { ...event, color } : event;
   });
   renderCalendarMiniMonth();
@@ -1192,7 +1215,7 @@ function renderCalendarBoard(events) {
       day.addEventListener('click', () => { calendarDate = new Date(date); calendarView = 'week'; pageRoot.querySelectorAll('[data-calendar-view]').forEach((item) => item.classList.toggle('active', item.dataset.calendarView === 'week')); renderCalendarBoard(calendarEvents); });
       cell.append(day);
       for (const event of visibleEvents.filter((item) => sameLocalDate(getEventStart(item), date)).slice(0, 3)) {
-        const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-month-event color-${event.color || 'green'}`; block.textContent = event.title;
+        const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-month-event color-${event.color || 'green'}`; block.textContent = event.title; addCalendarEventQuickDetails(block, event);
         block.addEventListener('click', (click) => { click.stopPropagation(); showEventForm(event); }); cell.append(block);
       }
       grid.append(cell);
@@ -1212,7 +1235,7 @@ function renderCalendarBoard(events) {
       const heading = document.createElement('h3'); heading.textContent = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' }).format(date); section.append(heading);
       if (!dayEvents.length) { const empty = document.createElement('p'); empty.textContent = 'No events'; section.append(empty); }
       for (const event of dayEvents) {
-        const row = document.createElement('button'); row.type = 'button'; row.className = 'calendar-agenda-event';
+        const row = document.createElement('button'); row.type = 'button'; row.className = `calendar-agenda-event color-${event.color || 'blue'}`; addCalendarEventQuickDetails(row, event);
         const time = document.createElement('span'); time.textContent = event.allDay ? 'All day' : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(getEventStart(event));
         const title = document.createElement('strong'); title.textContent = event.title;
         const detail = document.createElement('small'); detail.textContent = event.detail || event.location || '';
@@ -1237,7 +1260,7 @@ function renderCalendarBoard(events) {
   for (const date of weekDates) {
     const cell = document.createElement('div'); cell.className = 'calendar-all-day-cell';
     for (const event of visibleEvents.filter((item) => item.allDay && sameLocalDate(getEventStart(item), date))) {
-      const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-all-day-event color-${event.color || 'blue'}`; block.textContent = event.title;
+      const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-all-day-event color-${event.color || 'blue'}`; block.textContent = event.title; addCalendarEventQuickDetails(block, event);
       block.addEventListener('click', () => showEventForm(event)); cell.append(block);
     }
     allDayRow.append(cell);
@@ -1265,7 +1288,7 @@ function renderCalendarBoard(events) {
       if (minutes < 0 || minutes >= hourCount * 60) continue;
       const duration = Math.max(30, (new Date(event.endAt || new Date(start.getTime() + 60 * 60_000)) - start) / 60_000);
       const visibleDuration = Math.min(duration, hourCount * 60 - minutes);
-      const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-event-block${duration < 45 ? ' is-compact' : ''} color-${event.color || (event.category === 'personal-health' ? 'green' : 'blue')}`;
+      const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-event-block${duration < 45 ? ' is-compact' : ''} color-${event.color || (event.category === 'personal-health' ? 'green' : 'blue')}`; addCalendarEventQuickDetails(block, event);
       const hourScale = hourHeight / 60;
       block.style.top = `${minutes * hourScale}px`; block.style.height = `${visibleDuration * hourScale}px`;
       const title = document.createElement('strong'); title.textContent = event.title;
@@ -1302,6 +1325,36 @@ function renderCalendarMiniMonth() {
   }
 }
 
+function calendarCategoryLabel(category) {
+  if (category === 'connected') return 'Imported';
+  const normalized = calendarCategoryAliases[category] || category;
+  return calendarEventCategories.find((item) => item.value === normalized)?.label || category || 'Event';
+}
+
+function normalizeCalendarCategory(category) {
+  const normalized = calendarCategoryAliases[category] || category;
+  return calendarEventCategories.some((item) => item.value === normalized) ? normalized : 'general';
+}
+
+function calendarEventCalendar(event) {
+  if (!event.integration_id) return localCalendarModel.calendars.find((item) => item.id === (event.calendarId || 'local'));
+  return null;
+}
+
+function addCalendarEventQuickDetails(element, event) {
+  const start = getEventStart(event);
+  const when = event.allDay
+    ? `All day · ${new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(start)}`
+    : `${new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(start)} · ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start)}`;
+  const calendar = calendarEventCalendar(event);
+  const title = event.title || '(Untitled event)';
+  const preview = [title, when, event.calendarName || calendar?.name, calendarCategoryLabel(event.category), event.location, event.detail || event.description]
+    .filter(Boolean).join('\n');
+  element.title = preview;
+  element.setAttribute('aria-label', preview.replace(/\n/g, ', '));
+  return element;
+}
+
 function renderCalendarUpcoming(events) {
   const list = pageRoot.querySelector('#calendar-upcoming');
   if (!list) return;
@@ -1325,18 +1378,45 @@ function renderCalendarUpcoming(events) {
       time.textContent = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start);
       date.append(time);
     }
-    const button = document.createElement('button'); button.type = 'button'; button.className = `calendar-upcoming-event color-${event.color || 'blue'}`; button.textContent = event.title || '(No title)'; button.addEventListener('click', () => showEventForm(event));
+    const button = document.createElement('button'); button.type = 'button'; button.className = `calendar-upcoming-event color-${event.color || 'blue'}`; button.textContent = event.title || '(Untitled event)'; addCalendarEventQuickDetails(button, event); button.addEventListener('click', () => showEventForm(event));
     row.append(date, button); list.append(row);
   }
 }
 
 function renderCalendarIntegrations(integrations) {
   const summary = pageRoot.querySelector('#calendar-integration-summary');
+  const localSummary = pageRoot.querySelector('#local-calendar-summary');
   if (!summary) return;
   summary.replaceChildren();
   calendarIntegrationGroups.clear();
   calendarVisibilityGroups.clear();
   calendarColorsByVisibilityKey.clear();
+  if (localSummary) {
+    localSummary.replaceChildren();
+    const account = document.createElement('div'); account.className = 'calendar-account-group';
+    const heading = document.createElement('div'); heading.className = 'calendar-account-heading';
+    heading.textContent = localCalendarModel.account.name;
+    heading.title = 'On this device';
+    account.append(heading);
+    for (const calendar of localCalendarModel.calendars) {
+      const childKey = `local:${calendar.id}`;
+      const row = document.createElement('label'); row.className = 'calendar-account-line calendar-child-line';
+      const toggle = document.createElement('input'); toggle.className = `calendar-visibility-toggle color-${calendar.color}`; toggle.type = 'checkbox';
+      toggle.dataset.calendarSource = childKey; toggle.checked = calendarSourceVisibility[childKey] !== false;
+      toggle.title = `${toggle.checked ? 'Hide' : 'Show'} ${calendar.name}`;
+      const name = document.createElement('span'); name.className = 'calendar-account-name'; name.textContent = calendar.name; name.title = calendar.name;
+      row.title = `${calendar.name} · Local Dashboard account`;
+      row.append(toggle, name); account.append(row);
+      calendarVisibilityGroups.set(childKey, childKey);
+      calendarColorsByVisibilityKey.set(childKey, calendar.color);
+      toggle.addEventListener('change', () => {
+        calendarSourceVisibility[childKey] = toggle.checked;
+        toggle.title = `${toggle.checked ? 'Hide' : 'Show'} ${calendar.name}`;
+        renderCalendarBoard(calendarEvents);
+      });
+    }
+    localSummary.append(account);
+  }
   const calendarConnections = integrations.filter((item) => item.provider_id.includes('calendar'));
   const groupedConnections = new Map();
   for (const integration of calendarConnections) {
@@ -1390,15 +1470,37 @@ function renderCalendarIntegrations(integrations) {
 }
 
 function showEventForm(eventRecord = null) {
-  if (eventRecord?.integration_id) {
-    const description = [eventRecord.description || eventRecord.detail, eventRecord.location && `Location: ${eventRecord.location}`, eventRecord.sourceName || eventRecord.source || 'Connected calendar'].filter(Boolean).join('\n\n');
-    const content = document.createElement('div'); content.className = 'dialog-form';
-    const title = document.createElement('h3'); title.textContent = eventRecord.title || '(No title)';
-    const time = document.createElement('p'); time.textContent = eventRecord.allDay ? `All day · ${getEventStart(eventRecord).toLocaleDateString()}` : `${getEventStart(eventRecord).toLocaleString()} – ${new Date(eventRecord.endAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-    const detail = document.createElement('p'); detail.textContent = description;
-    content.append(title, time, detail);
+  if (eventRecord && (eventRecord.integration_id || eventRecord.source_plugin_id !== 'calendar')) {
+    const content = document.createElement('div'); content.className = 'calendar-event-details';
+    const category = document.createElement('span'); category.className = 'calendar-event-category';
+    category.textContent = calendarCategoryLabel(eventRecord.category);
+    const title = document.createElement('h3'); title.textContent = eventRecord.title || '(Untitled event)';
+    const start = getEventStart(eventRecord);
+    const when = document.createElement('p'); when.className = 'calendar-event-detail-when';
+    when.textContent = eventRecord.allDay
+      ? `All day · ${new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(start)}`
+      : `${new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(start)} · ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start)}${eventRecord.endAt ? `–${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(eventRecord.endAt))}` : ''}`;
+    const metadata = document.createElement('dl'); metadata.className = 'calendar-event-detail-list';
+    const calendar = calendarEventCalendar(eventRecord);
+    const accountName = eventRecord.accountName || (eventRecord.integration_id ? eventRecord.sourceAccount : localCalendarModel.account.name);
+    const calendarName = eventRecord.calendarName || calendar?.name || eventRecord.sourceName || eventRecord.source || 'Calendar';
+    for (const [label, value] of [['Calendar', calendarName], ['Account', accountName], ['Category', calendarCategoryLabel(eventRecord.category)], ['Location', eventRecord.location]]) {
+      if (!value) continue;
+      const term = document.createElement('dt'); term.textContent = label;
+      const description = document.createElement('dd'); description.textContent = value;
+      if (label === 'Calendar') {
+        const color = eventRecord.calendarColor || eventRecord.color || calendar?.color || 'blue';
+        description.replaceChildren();
+        const swatch = document.createElement('span'); swatch.className = `calendar-event-calendar-color color-${color}`; swatch.setAttribute('aria-hidden', 'true');
+        description.append(swatch, document.createTextNode(value));
+      }
+      metadata.append(term, description);
+    }
+    const noteText = eventRecord.description || eventRecord.detail;
+    content.append(category, title, when, metadata);
+    if (noteText) { const note = document.createElement('p'); note.className = 'calendar-event-detail-note'; note.textContent = noteText; content.append(note); }
     const close = document.createElement('button'); close.className = 'button button-secondary'; close.type = 'button'; close.textContent = 'Done';
-    const dialog = openDialog('Connected event', content, [close]); close.addEventListener('click', () => dialog.close());
+    const dialog = openDialog('Event details', content, [close]); dialog.classList.add('calendar-event-details-dialog'); close.addEventListener('click', () => dialog.close());
     return;
   }
   const start = eventRecord ? getEventStart(eventRecord) : new Date(calendarDate);
@@ -1406,11 +1508,15 @@ function showEventForm(eventRecord = null) {
   const end = eventRecord?.endAt ? new Date(eventRecord.endAt) : new Date(start.getTime() + 60 * 60_000);
   const form = document.createElement('form'); form.className = 'dialog-form';
   form.innerHTML = `<label class="field field-wide">Title<input name="title" required maxlength="100" placeholder="Event title"></label>
+    <label class="field">Calendar<select name="calendarId">${localCalendarModel.calendars.map((calendar) => `<option value="${calendar.id}">${calendar.name}</option>`).join('')}</select></label>
+    <label class="field">Category<select name="category">${calendarEventCategories.map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}</select></label>
     <label class="field field-wide calendar-all-day-toggle"><input name="allDay" type="checkbox"> All-day event</label>
     <label class="field" data-time-field>Date<input name="eventDate" type="date"></label>
     <label class="field" data-time-field>Starts<input name="startAt" type="datetime-local" required></label><label class="field" data-time-field>Ends<input name="endAt" type="datetime-local" required></label>
     <label class="field">Location<input name="location" maxlength="120" placeholder="Optional"></label><label class="field field-wide">Notes<textarea name="description" rows="3" maxlength="500" placeholder="Add details"></textarea></label><p class="form-error field-wide" hidden></p>`;
   form.elements.title.value = eventRecord?.title || '';
+  form.elements.calendarId.value = localCalendarModel.calendars.some((calendar) => calendar.id === eventRecord?.calendarId) ? eventRecord.calendarId : 'local';
+  form.elements.category.value = normalizeCalendarCategory(eventRecord?.category);
   form.elements.startAt.value = localDateTimeValue(start);
   form.elements.endAt.value = localDateTimeValue(end);
   form.elements.eventDate.value = localDateKey(start);
@@ -1446,7 +1552,9 @@ function showEventForm(eventRecord = null) {
     if (!allDay && new Date(form.elements.endAt.value) <= new Date(form.elements.startAt.value)) { error.textContent = 'The end time must be after the start time.'; error.hidden = false; return; }
     error.hidden = true;
     const date = form.elements.eventDate.value;
-    const values = { id: eventRecord?.id, title: form.elements.title.value.trim(), startAt: allDay ? date : form.elements.startAt.value, endAt: allDay ? date : form.elements.endAt.value, allDay, location: form.elements.location.value.trim(), description: form.elements.description.value.trim() };
+    const selectedCalendar = localCalendarModel.calendars.find((calendar) => calendar.id === form.elements.calendarId.value) || localCalendarModel.calendars[0];
+    const category = form.elements.category.value;
+    const values = { id: eventRecord?.id, title: form.elements.title.value.trim(), category, color: selectedCalendar.color, calendarId: selectedCalendar.id, calendarName: selectedCalendar.name, calendarColor: selectedCalendar.color, accountId: localCalendarModel.account.id, accountName: localCalendarModel.account.name, startAt: allDay ? date : form.elements.startAt.value, endAt: allDay ? date : form.elements.endAt.value, allDay, location: form.elements.location.value.trim(), description: form.elements.description.value.trim() };
     if (eventRecord) await window.dashboard.updateCalendarEvent(values);
     else await window.dashboard.createCalendarEvent(values);
     dialog.close(); await reloadCalendar();

@@ -56,7 +56,12 @@ function registerIpcHandlers() {
       case 'integrations': return { integrations: integrationSummaries() };
       case 'workflows': return { workflows: workflowSummaries(), runs: workflowRuns() };
       case 'calendar': return {
-        events: CalendarEvent.all().map((event) => event.toJSON()),
+        // Older disconnect behavior nulled integration_id, which made remote
+        // events look like locally owned events. Keep those legacy detached
+        // records out of the active calendar until they are explicitly cleaned.
+        events: CalendarEvent.all()
+          .filter((event) => event.integration_id || !['google-calendar-connector', 'outlook-calendar-connector'].includes(event.source_plugin_id))
+          .map((event) => event.toJSON()),
         integrations: integrationSummaries(),
         settings: getPluginSetting('calendar', 'visible-hours') || { startHour: 0, endHour: 24 },
         sidePanelCollapsed: getPluginSetting('calendar', 'side-panel-collapsed') === true,
@@ -578,6 +583,13 @@ async function executeOutlookCalendarWorkflow(workflowId) {
     const result = await syncOutlookCalendar({
       clientId: credentials.clientId, token, integrationId: integration.id, calendars,
       getSyncToken: (calendarId) => calendars.find((calendar) => calendar.id === calendarId)?.sync_token,
+      calendarNeedsRepair: (calendar) => {
+        const prefix = `calendar:${integration.id}:${calendar.external_calendar_id}:`;
+        return Boolean(CalendarEvent.connection.prepare(`SELECT 1 FROM data_records
+          WHERE integration_id = ? AND source_plugin_id = 'outlook-calendar-connector'
+            AND substr(external_id, 1, length(?)) = ?
+            AND json_extract(payload_json, '$.title') = '(No title)' LIMIT 1`).get(integration.id, prefix, prefix));
+      },
       saveSyncToken: saveCalendarCursor,
       importEvents: (id, events) => upsertCalendarEvents(id, 'outlook-calendar-connector', events),
       deleteEvents: (id, calendarId, externalIds) => deleteCalendarEvents(id, 'outlook-calendar-connector', calendarId, externalIds),

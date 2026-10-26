@@ -18,10 +18,10 @@ class CalendarEvent extends ApplicationRecord {
       integration_id: null,
       description: '',
       location: '',
-      category: 'personal',
+      category: 'general',
       calendarId: 'local',
       allDay: false,
-      color: 'green',
+      color: 'blue',
     };
   }
 
@@ -51,6 +51,10 @@ class CalendarEvent extends ApplicationRecord {
       startAt: this.startAt,
       endAt: this.endAt,
       calendarId: this.calendarId,
+      calendarName: this.calendarName,
+      calendarColor: this.calendarColor,
+      accountId: this.accountId,
+      accountName: this.accountName,
       allDay: this.allDay,
       color: this.color,
     };

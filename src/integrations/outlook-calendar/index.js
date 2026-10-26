@@ -73,7 +73,7 @@ async function listOutlookCalendars(token) {
   return calendars;
 }
 
-async function syncOutlookCalendar({ clientId, token, integrationId, calendars, getSyncToken, saveSyncToken, importEvents, deleteEvents }) {
+async function syncOutlookCalendar({ clientId, token, integrationId, calendars, getSyncToken, calendarNeedsRepair, saveSyncToken, importEvents, deleteEvents }) {
   if (Date.now() >= token.expires_at) token = await refreshOutlookToken(clientId, token);
   const now = new Date();
   const start = new Date(now); start.setUTCFullYear(start.getUTCFullYear() - 1);
@@ -81,9 +81,12 @@ async function syncOutlookCalendar({ clientId, token, integrationId, calendars, 
   let recordCount = 0;
   for (const calendar of calendars) {
     let next = getSyncToken(calendar.id);
+    // Earlier versions stored delta occurrences without their series title or
+    // all-day flag. Rebuild only calendars containing those known bad rows.
+    const repairRequired = Boolean(next && await calendarNeedsRepair?.(calendar));
     const windowStartDate = calendar.sync_window_start ? new Date(calendar.sync_window_start) : null;
     const refreshThreshold = new Date(now); refreshThreshold.setUTCDate(refreshThreshold.getUTCDate() - 365 - 270);
-    const fullRefresh = next && windowStartDate && windowStartDate < refreshThreshold;
+    const fullRefresh = next && ((windowStartDate && windowStartDate < refreshThreshold) || repairRequired);
     if (fullRefresh) {
       deleteEvents(calendar.integration_id, calendar.external_calendar_id, null);
       saveSyncToken(calendar.id, null);
@@ -95,6 +98,21 @@ async function syncOutlookCalendar({ clientId, token, integrationId, calendars, 
       next = `${GRAPH_API}/me/calendars/${encodeURIComponent(calendar.external_calendar_id)}/calendarView/delta?${query}`;
     }
     let deltaLink;
+    const seriesMasters = new Map();
+    const getSeriesMaster = async (seriesMasterId) => {
+      if (!seriesMasterId) return null;
+      if (!seriesMasters.has(seriesMasterId)) {
+        seriesMasters.set(seriesMasterId, graphFetch(
+          `${GRAPH_API}/me/events/${encodeURIComponent(seriesMasterId)}?$select=id,subject,isAllDay`, token,
+        ).catch((error) => {
+          // A deleted/inaccessible master should not block importing the
+          // occurrence. It will retain the normal fallback title instead.
+          if (error.status === 404 || error.status === 410) return null;
+          throw error;
+        }));
+      }
+      return seriesMasters.get(seriesMasterId);
+    };
     try {
       do {
         const page = await graphFetch(next, token);
@@ -105,18 +123,20 @@ async function syncOutlookCalendar({ clientId, token, integrationId, calendars, 
           const rawStart = event.start?.dateTime || '';
           const rawEnd = event.end?.dateTime || '';
           if (!rawStart || !rawEnd) continue;
-          const allDay = Boolean(event.isAllDay);
+          const master = ((!event.subject || event.isAllDay === undefined) && event.seriesMasterId)
+            ? await getSeriesMaster(event.seriesMasterId) : null;
+          const allDay = Boolean(event.isAllDay ?? master?.isAllDay);
           const startAt = allDay ? rawStart.slice(0, 10) : normalizeGraphDateTime(rawStart);
           const endAt = allDay ? rawEnd.slice(0, 10) : normalizeGraphDateTime(rawEnd);
           upserts.push({
             id: `event-${crypto.createHash('sha256').update(externalId).digest('hex').slice(0, 24)}`,
             externalId, occurredAt: startAt,
             payload: {
-              title: event.subject || '(No title)', detail: event.bodyPreview || '', description: event.bodyPreview || '',
+              title: event.subject || master?.subject || `Untitled · ${calendar.summary || 'Outlook event'}`, detail: event.bodyPreview || '', description: event.bodyPreview || '',
               location: event.location?.displayName || '', startAt, endAt, allDay,
               calendarId: calendar.external_calendar_id, calendarName: calendar.summary, calendarColor: calendar.color || '',
               source: 'Outlook Calendar', sourceAccount: calendar.account_label || '', sourceName: calendar.account_label ? `${calendar.summary} · ${calendar.account_label}` : calendar.summary || 'Outlook Calendar',
-              providerEventId: event.id, iCalUID: event.iCalUId || '', webLink: event.webLink || '',
+              providerEventId: event.id, seriesMasterId: event.seriesMasterId || '', iCalUID: event.iCalUId || '', webLink: event.webLink || '',
               timezone: allDay ? '' : 'UTC', color: 'blue', category: 'connected',
             },
           });
