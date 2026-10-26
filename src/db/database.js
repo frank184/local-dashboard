@@ -223,6 +223,17 @@ function migrate(db) {
     }
     db.exec('PRAGMA user_version = 12;');
   }
+
+  if (version < 13) {
+    db.exec(`
+      UPDATE data_records
+      SET payload_json = json_set(payload_json, '$.title', substr(json_extract(payload_json, '$.title'), 10))
+      WHERE record_type = 'calendar_events'
+        AND json_extract(payload_json, '$.calendarId') = 'local-fitness'
+        AND json_extract(payload_json, '$.title') LIKE 'Workout: %';
+      PRAGMA user_version = 13;
+    `);
+  }
 }
 
 function seedBuiltIns(db) {

@@ -1374,6 +1374,42 @@ body.is-calendar-page #page-root > .calendar-page { height: calc(100dvh - 40px);
   background: #ef4444;
   content: "";
 }
+
+/* Press-and-hold calendar moves and lightweight list reordering. */
+.calendar-event-block.is-hold-draggable,
+.calendar-all-day-event.is-hold-draggable { cursor: grab; touch-action: none; }
+.calendar-event-block.is-holding-to-drag::after,
+.calendar-all-day-event.is-holding-to-drag::after {
+  position: absolute; right: 5px; bottom: 3px; left: 5px; height: 3px; border-radius: 99px;
+  background: var(--color-primary); content: ""; transform: scaleX(0); transform-origin: left center;
+  transition: transform var(--drag-hold-duration, 1000ms) linear;
+}
+.calendar-event-block.is-holding-to-drag,
+.calendar-all-day-event.is-holding-to-drag { outline: 1px solid color-mix(in srgb, var(--color-primary) 42%, transparent); }
+.calendar-event-block.is-holding-to-drag::after,
+.calendar-all-day-event.is-holding-to-drag::after { transform: scaleX(1); }
+.calendar-event-block.is-drag-source,
+.calendar-all-day-event.is-drag-source { opacity: .2; filter: grayscale(.8); }
+.calendar-event-drag-ghost { position: fixed !important; z-index: 9999 !important; right: auto !important; bottom: auto !important; left: 0; top: 0; opacity: .96; pointer-events: none !important; transform: rotate(1.5deg) scale(1.035); box-shadow: 0 12px 28px rgba(20, 35, 25, .28) !important; }
+.calendar-all-day-event.calendar-event-drag-ghost { position: fixed !important; }
+.calendar-day-column.is-drop-target,
+.calendar-all-day-cell.is-drop-target { outline: 2px dashed var(--color-primary); outline-offset: -3px; background: color-mix(in srgb, var(--color-primary-soft) 64%, transparent); }
+.is-dragging { opacity: .38; }
+.plugin-card-drag-handle { display: grid; place-items: center; flex: 0 0 auto; width: 22px; height: 26px; margin-left: auto; color: var(--color-muted); cursor: grab; opacity: .55; }
+.plugin-card-drag-handle:hover, .plugin-list-card:hover .plugin-card-drag-handle { opacity: 1; }
+.plugin-list-card[draggable="true"] { cursor: default; }
+.nav-plugin-label { width: auto !important; min-width: 0; flex: 1 1 auto; text-align: left !important; font-size: inherit !important; }
+.nav-plugin-drag-handle { display: grid; place-items: center; width: 16px !important; margin-left: auto; color: var(--color-muted); cursor: grab; opacity: 0; transition: opacity .12s ease; }
+.nav-item:hover .nav-plugin-drag-handle, .nav-item:focus-visible .nav-plugin-drag-handle { opacity: .75; }
+.nav-plugin-drag-handle .icon { width: 13px; height: 13px; }
+.todo-reorder-handle { display: grid; flex: 0 0 18px; place-items: center; width: 18px; height: 30px; padding: 0; border: 0; background: transparent; color: var(--color-muted); cursor: grab; opacity: .6; }
+.todo-reorder-handle:hover, .todo-row:hover .todo-reorder-handle { opacity: 1; }
+.todo-reorder-handle .icon { width: 15px; height: 15px; }
+.fitness-reorder-item { position: absolute; top: 7px; right: 35px; width: 24px; height: 24px; color: var(--color-muted); cursor: grab; }
+.fitness-reorder-item:active, .plugin-card-drag-handle:active, .nav-plugin-drag-handle:active { cursor: grabbing; }
+.fitness-edit-item.is-dragging { border-color: var(--color-primary); }
+body.is-sidebar-collapsed .nav-plugin-label,
+body.is-sidebar-collapsed .nav-plugin-drag-handle { display: none !important; }
 :root[data-theme="dark"] .calendar-current-time-indicator { background: linear-gradient(90deg, rgba(239, 68, 68, .2), rgba(239, 68, 68, .44) 12%, rgba(239, 68, 68, .44) 88%, rgba(239, 68, 68, .2)); }
 .calendar-event-block.is-compact strong {
   display: block;

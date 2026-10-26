@@ -19,6 +19,7 @@ import {
   Clock,
   Check,
   FileUp,
+  GripVertical,
   HeartPulse,
   Info,
   LayoutDashboard,
@@ -74,6 +75,7 @@ const iconSet = {
   Clock,
   Check,
   FileUp,
+  GripVertical,
   HeartPulse,
   Info,
   LayoutDashboard,
@@ -238,23 +240,7 @@ themeToggle?.addEventListener('click', () => applyTheme(document.documentElement
 async function loadPluginNavigation() {
   try {
     const { plugins } = await window.dashboard.getPageData('navigation');
-    featureNavigation.replaceChildren();
-    for (const plugin of plugins.filter((item) => featureRoutes.has(item.id))) {
-      pageTitles[plugin.id] = plugin.name;
-      const link = document.createElement('a');
-      link.className = 'nav-item';
-      link.href = `#${plugin.id}`;
-      link.title = plugin.name;
-      link.setAttribute('aria-label', plugin.name);
-      link.dataset.pluginId = plugin.id;
-      const icon = document.createElement('i');
-      icon.className = 'icon';
-      icon.dataset.lucide = plugin.icon;
-      icon.setAttribute('aria-hidden', 'true');
-      link.append(icon, document.createTextNode(` ${plugin.name}`));
-      featureNavigation.append(link);
-    }
-    renderIcons(featureNavigation);
+    renderFeatureNavigation(plugins);
     updateActiveNavigation(currentPage);
   } catch (error) {
     console.error('Could not load plugin navigation', error);
@@ -280,6 +266,69 @@ function destroyCharts() {
 
 function renderIcons(root) {
   createIcons({ icons: iconSet, root, attrs: { 'stroke-width': 1.8 } });
+}
+
+function storedOrder(key) {
+  try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value : []; }
+  catch { return []; }
+}
+
+function orderByStoredIds(items, key, getId = (item) => item.id) {
+  const order = new Map(storedOrder(key).map((id, index) => [id, index]));
+  return [...items].sort((left, right) => (order.get(getId(left)) ?? Number.MAX_SAFE_INTEGER) - (order.get(getId(right)) ?? Number.MAX_SAFE_INTEGER));
+}
+
+function enableNativeReordering(container, selector, getId, storageKey, handleSelector = null) {
+  if (!container) return;
+  container.querySelectorAll(selector).forEach((item) => { item.draggable = true; });
+  if (container.dataset.reorderReady === 'true') return;
+  container.dataset.reorderReady = 'true';
+  let dragged = null;
+  let handleArmed = !handleSelector;
+  container.addEventListener('pointerdown', (event) => { handleArmed = !handleSelector || Boolean(event.target.closest(handleSelector)); }, true);
+  container.addEventListener('dragstart', (event) => {
+    const item = event.target.closest(selector);
+    if (!item || !container.contains(item) || (handleSelector && !handleArmed)) { event.preventDefault(); return; }
+    dragged = item;
+    item.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', getId(item));
+  });
+  container.addEventListener('dragover', (event) => {
+    if (!dragged) return;
+    const target = event.target.closest(selector);
+    if (!target || target === dragged || !container.contains(target)) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    const rect = target.getBoundingClientRect();
+    const sameRow = event.clientY >= rect.top + rect.height * .25 && event.clientY <= rect.bottom - rect.height * .25;
+    const insertBefore = sameRow ? event.clientX < rect.left + rect.width / 2 : event.clientY < rect.top + rect.height / 2;
+    container.insertBefore(dragged, insertBefore ? target : target.nextElementSibling);
+  });
+  container.addEventListener('drop', (event) => {
+    if (!dragged) return;
+    event.preventDefault();
+    if (storageKey) localStorage.setItem(storageKey, JSON.stringify([...container.querySelectorAll(selector)].map(getId)));
+  });
+  container.addEventListener('dragend', () => {
+    dragged?.classList.remove('is-dragging');
+    dragged = null;
+  });
+}
+
+function renderFeatureNavigation(plugins) {
+  featureNavigation.replaceChildren();
+  const ordered = orderByStoredIds(plugins.filter((item) => featureRoutes.has(item.id)), 'local-dashboard-feature-navigation-order');
+  for (const plugin of ordered) {
+    pageTitles[plugin.id] = plugin.name;
+    const link = document.createElement('a');
+    link.className = 'nav-item'; link.href = `#${plugin.id}`; link.title = plugin.name; link.setAttribute('aria-label', plugin.name); link.dataset.pluginId = plugin.id;
+    const icon = document.createElement('i'); icon.className = 'icon'; icon.dataset.lucide = plugin.icon; icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span'); label.className = 'nav-plugin-label'; label.textContent = plugin.name;
+    const handle = document.createElement('span'); handle.className = 'nav-plugin-drag-handle'; handle.title = `Reorder ${plugin.name}`; handle.setAttribute('aria-hidden', 'true'); handle.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>';
+    link.append(icon, label, handle); featureNavigation.append(link);
+  }
+  enableNativeReordering(featureNavigation, '.nav-item[data-plugin-id]', (item) => item.dataset.pluginId, 'local-dashboard-feature-navigation-order', '.nav-plugin-drag-handle');
+  renderIcons(featureNavigation);
 }
 
 // Hash links with a current route can still trigger native fragment scrolling. Keep
@@ -604,11 +653,13 @@ function renderPlugins(plugins) {
   const list = pageRoot.querySelector('#plugin-card-grid');
   if (!list) return;
   list.replaceChildren();
+  plugins = orderByStoredIds(plugins, 'local-dashboard-plugin-catalog-order');
   const count = pageRoot.querySelector('#plugin-count');
   if (count) count.textContent = `${plugins.filter((plugin) => plugin.installed).length} installed`;
   for (const plugin of plugins) {
     const card = document.createElement('article');
     card.className = `plugin-list-card${plugin.installed ? '' : ' is-uninstalled'}`;
+    card.dataset.pluginId = plugin.id;
     const top = document.createElement('div');
     top.className = 'plugin-list-card-top';
     const identity = document.createElement('div');
@@ -627,6 +678,7 @@ function renderPlugins(plugins) {
     titleBlock.append(title, subline);
     identity.append(icon, titleBlock);
     top.append(identity);
+    const dragHandle = document.createElement('span'); dragHandle.className = 'plugin-card-drag-handle'; dragHandle.title = `Reorder ${plugin.name}`; dragHandle.setAttribute('aria-hidden', 'true'); dragHandle.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>'; top.append(dragHandle);
     if (plugin.installed) {
       const cardActions = document.createElement('div');
       cardActions.className = 'plugin-card-actions';
@@ -679,6 +731,7 @@ function renderPlugins(plugins) {
     card.append(top, description, footer);
     list.append(card);
   }
+  enableNativeReordering(list, '.plugin-list-card[data-plugin-id]', (card) => card.dataset.pluginId, 'local-dashboard-plugin-catalog-order', '.plugin-card-drag-handle');
   renderIcons(list);
 }
 
@@ -699,15 +752,7 @@ async function refreshPluginData() {
     window.dashboard.getPageData('plugins'), window.dashboard.getPageData('navigation'),
   ]);
   renderPlugins(plugins);
-  featureNavigation.replaceChildren();
-  for (const plugin of navigation.filter((item) => featureRoutes.has(item.id))) {
-    pageTitles[plugin.id] = plugin.name;
-    const link = document.createElement('a');
-    link.className = 'nav-item'; link.href = `#${plugin.id}`; link.title = plugin.name; link.setAttribute('aria-label', plugin.name);
-    const icon = document.createElement('i'); icon.className = 'icon'; icon.dataset.lucide = plugin.icon;
-    link.append(icon, document.createTextNode(` ${plugin.name}`)); featureNavigation.append(link);
-  }
-  renderIcons(featureNavigation);
+  renderFeatureNavigation(navigation);
 }
 
 function openDialog(title, contentNode, actions = []) {
@@ -1332,10 +1377,10 @@ function renderCalendarBoard(events) {
   const allDayRow = document.createElement('div'); allDayRow.className = 'calendar-all-day-row';
   const allDayLabel = document.createElement('div'); allDayLabel.className = 'calendar-all-day-label'; allDayLabel.textContent = 'All day'; allDayRow.append(allDayLabel);
   for (const date of weekDates) {
-    const cell = document.createElement('div'); cell.className = 'calendar-all-day-cell';
+    const cell = document.createElement('div'); cell.className = 'calendar-all-day-cell'; cell.dataset.calendarDate = localDateKey(date);
     for (const event of visibleEvents.filter((item) => item.allDay && sameLocalDate(getEventStart(item), date))) {
       const block = document.createElement('button'); block.type = 'button'; block.className = `calendar-all-day-event color-${event.color || 'blue'}`; block.textContent = event.title; addCalendarEventQuickDetails(block, event);
-      block.addEventListener('click', () => openCalendarEvent(event)); cell.append(block);
+      block.addEventListener('click', () => openCalendarEvent(event)); attachCalendarEventDrag(block, event); cell.append(block);
     }
     allDayRow.append(cell);
   }
@@ -1367,7 +1412,7 @@ function renderCalendarBoard(events) {
       block.style.top = `${minutes * hourScale}px`; block.style.height = `${visibleDuration * hourScale}px`;
       const title = document.createElement('strong'); title.textContent = event.title;
       const time = document.createElement('small'); time.textContent = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(start);
-      block.append(title, time); block.addEventListener('click', () => openCalendarEvent(event)); column.append(block);
+      block.append(title, time); block.addEventListener('click', () => openCalendarEvent(event)); attachCalendarEventDrag(block, event); column.append(block);
     }
     grid.append(column);
   }
@@ -1420,6 +1465,101 @@ function openCalendarEvent(event) {
   showEventForm(event);
 }
 
+function calendarDragTargetAt(clientX, clientY) {
+  const element = document.elementFromPoint(clientX, clientY);
+  const allDayCell = element?.closest('.calendar-all-day-cell[data-calendar-date]');
+  if (allDayCell) return { date: allDayCell.dataset.calendarDate, allDay: true, element: allDayCell };
+  const dayColumn = element?.closest('.calendar-day-column[data-calendar-date]');
+  if (!dayColumn) return null;
+  return { date: dayColumn.dataset.calendarDate, allDay: false, element: dayColumn, clientY };
+}
+
+function snapCalendarDrop(event, target) {
+  if (target.allDay) return { startAt: target.date, endAt: target.date, allDay: true };
+  const { startHour, endHour } = normalizeCalendarSettings(calendarSettings);
+  const bounds = target.element.getBoundingClientRect();
+  const minutesFromTop = Math.max(0, (target.clientY - bounds.top) * (60 / 64));
+  const minuteOfDay = Math.max(startHour * 60, Math.min(endHour * 60 - 15, startHour * 60 + Math.round(minutesFromTop / 15) * 15));
+  const hour = Math.floor(minuteOfDay / 60); const minute = minuteOfDay % 60;
+  const startAt = `${target.date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+  const routine = event.fitnessRoutineId ? getFitnessRoutines().find((item) => item.id === event.fitnessRoutineId) : null;
+  const duration = event.allDay
+    ? Math.max(30, fitnessEstimate(routine || { kind: 'lift', expectedDurationMinutes: 60, items: [] }).minutes || 60)
+    : Math.max(15, Math.round((new Date(event.endAt) - getEventStart(event)) / 60_000) || 60);
+  const endAt = `${localDateTimeValue(new Date(new Date(startAt).getTime() + duration * 60_000))}:00`;
+  return { startAt, endAt, allDay: false };
+}
+
+function attachCalendarEventDrag(block, event) {
+  if (calendarView !== 'week' || event.integration_id || event.source_plugin_id !== 'calendar') return;
+  if (event.isRecurringOccurrence && (!event.fitnessRoutineId || !getFitnessRoutines().some((routine) => routine.id === event.fitnessRoutineId))) return;
+  const state = { timer: null, pointerId: null, startX: 0, startY: 0, ready: false, ghost: null, target: null, suppressClick: false };
+  block.classList.add('is-hold-draggable');
+  block.addEventListener('click', (click) => {
+    if (!state.suppressClick) return;
+    click.preventDefault(); click.stopImmediatePropagation(); state.suppressClick = false;
+  }, true);
+  const clearHold = () => { clearTimeout(state.timer); state.timer = null; block.classList.remove('is-holding-to-drag'); };
+  const clearDrag = () => {
+    clearHold();
+    state.ghost?.remove(); state.ghost = null;
+    state.target?.classList.remove('is-drop-target'); state.target = null;
+    block.classList.remove('is-drag-source');
+    state.ready = false;
+  };
+  block.addEventListener('pointerdown', (pointer) => {
+    if (pointer.button !== 0 || state.pointerId !== null) return;
+    state.pointerId = pointer.pointerId; state.startX = pointer.clientX; state.startY = pointer.clientY; state.ready = false;
+    block.classList.add('is-holding-to-drag');
+    block.style.setProperty('--drag-hold-duration', `${event.allDay ? 1500 : 1000}ms`);
+    try { block.setPointerCapture(pointer.pointerId); } catch {}
+    state.timer = setTimeout(() => {
+      state.ready = true; state.ghost = block.cloneNode(true); state.ghost.removeAttribute('id'); state.ghost.className = `${block.className} calendar-event-drag-ghost`; state.ghost.style.width = `${block.getBoundingClientRect().width}px`; document.body.append(state.ghost); block.classList.add('is-drag-source');
+    }, event.allDay ? 1500 : 1000);
+  });
+  block.addEventListener('pointermove', (pointer) => {
+    if (pointer.pointerId !== state.pointerId) return;
+    if (!state.ready) {
+      if (Math.hypot(pointer.clientX - state.startX, pointer.clientY - state.startY) > 9) clearHold();
+      return;
+    }
+    pointer.preventDefault();
+    state.ghost.style.left = `${pointer.clientX + 12}px`; state.ghost.style.top = `${pointer.clientY + 12}px`;
+    const target = calendarDragTargetAt(pointer.clientX, pointer.clientY);
+    if (state.target !== target?.element) { state.target?.classList.remove('is-drop-target'); state.target = target?.element || null; state.target?.classList.add('is-drop-target'); }
+    block._calendarDropTarget = target;
+  });
+  block.addEventListener('pointerup', async (pointer) => {
+    if (pointer.pointerId !== state.pointerId) return;
+    const target = state.ready ? block._calendarDropTarget : null;
+    const didDrag = state.ready;
+    clearDrag(); state.pointerId = null; block._calendarDropTarget = null;
+    if (didDrag) { state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 700); }
+    if (!didDrag || !target) return;
+    try { await persistCalendarEventDrop(event, snapCalendarDrop(event, target)); }
+    catch (error) { window.alert(`Could not move event: ${error.message}`); }
+  });
+  block.addEventListener('pointercancel', () => { clearDrag(); state.pointerId = null; block._calendarDropTarget = null; });
+  block.addEventListener('lostpointercapture', () => { if (state.pointerId !== null) { clearDrag(); state.pointerId = null; block._calendarDropTarget = null; } });
+}
+
+async function persistCalendarEventDrop(event, changes) {
+  if (event.isRecurringOccurrence && event.fitnessRoutineId) {
+    const routines = getFitnessRoutines(); const routine = routines.find((item) => item.id === event.fitnessRoutineId);
+    if (!routine) throw new Error('The Fitness routine for this event was removed.');
+    const previous = (routine.scheduleExceptions || []).find((item) => item.date === event.originalDate);
+    routine.scheduleExceptions = (routine.scheduleExceptions || []).filter((item) => item.date !== event.originalDate).concat({
+      date: event.originalDate, weekday: event.fitnessWeekday, cancelled: false,
+      overrides: { ...(previous?.overrides || {}), startAt: changes.startAt, endAt: changes.endAt, allDay: changes.allDay },
+    });
+    localStorage.setItem(FITNESS_STORAGE_KEY, JSON.stringify(routines));
+    await syncFitnessSchedules(routines);
+  } else {
+    await window.dashboard.updateCalendarEvent({ ...event, id: event.id, startAt: changes.startAt, endAt: changes.endAt, allDay: changes.allDay });
+  }
+  await reloadCalendar();
+}
+
 function showFitnessOccurrenceForm(event) {
   const routine = getFitnessRoutines().find((item) => item.id === event.fitnessRoutineId);
   if (!routine) return;
@@ -1429,7 +1569,7 @@ function showFitnessOccurrenceForm(event) {
   const existingStart = event.startAt;
   const duration = event.allDay ? fitnessEstimate(routine).minutes : Math.max(5, Math.round((new Date(event.endAt) - new Date(existingStart)) / 60000));
   form.innerHTML = `<label class="field field-wide">Workout<input name="title" required maxlength="100"></label><label class="field field-wide">Date<input name="date" type="date" required></label><label class="field field-wide dialog-checkbox"><input name="allDay" type="checkbox"> All-day event</label><label class="field" data-occurrence-time>Start time<input name="time" type="time"></label><label class="field" data-occurrence-time>Duration (min)<input name="duration" type="number" min="5" max="600"></label><p class="dialog-copy field-wide">Save changes to this workout, change this and following workouts, or edit the entire series.</p>`;
-  form.elements.title.value = event.title.replace(/^Workout:\s*/, ''); form.elements.date.value = dateKey;
+  form.elements.title.value = event.title; form.elements.date.value = dateKey;
   form.elements.allDay.checked = Boolean(event.allDay); form.elements.time.value = event.allDay ? '' : String(existingStart).slice(11, 16); form.elements.duration.value = duration;
   const syncTimeFields = () => { form.querySelectorAll('[data-occurrence-time]').forEach((field) => { field.hidden = form.elements.allDay.checked; }); form.elements.time.required = !form.elements.allDay.checked; form.elements.duration.required = !form.elements.allDay.checked; };
   form.elements.allDay.addEventListener('change', syncTimeFields); syncTimeFields();
@@ -1466,7 +1606,7 @@ function showFitnessOccurrenceForm(event) {
     const allDay = form.elements.allDay.checked; const date = form.elements.date.value;
     const startAt = allDay ? date : `${date}T${form.elements.time.value}:00`;
     const endAt = allDay ? date : `${localDateTimeValue(new Date(new Date(startAt).getTime() + Number(form.elements.duration.value) * 60000))}:00`;
-    try { await saveException({ date: dateKey, weekday: event.fitnessWeekday, cancelled: false, overrides: { title: `Workout: ${form.elements.title.value.trim()}`, startAt, endAt, allDay } }); }
+    try { await saveException({ date: dateKey, weekday: event.fitnessWeekday, cancelled: false, overrides: { title: form.elements.title.value.trim(), startAt, endAt, allDay } }); }
     catch (error) { save.disabled = false; window.alert(`Could not update workout occurrence: ${error.message}`); }
   });
 }
@@ -1738,7 +1878,10 @@ function getFitnessRoutines() {
       scheduleEndType: routine.scheduleEndType || (routine.scheduleUntil ? 'date' : routine.scheduleCount ? 'count' : 'never'),
       scheduleEndDate: routine.scheduleEndDate || routine.scheduleUntil || '',
       scheduleEndCount: routine.scheduleEndCount || routine.scheduleCount || null,
-      scheduleExceptions: Array.isArray(routine.scheduleExceptions) ? routine.scheduleExceptions : [],
+      scheduleExceptions: Array.isArray(routine.scheduleExceptions) ? routine.scheduleExceptions.map((exception) => ({
+        ...exception,
+        overrides: exception.overrides?.title ? { ...exception.overrides, title: exception.overrides.title.replace(/^Workout:\s*/, '') } : exception.overrides,
+      })) : [],
     }));
     if (saved === null) {
       const seeded = normalize(FITNESS_STARTER_ROUTINES);
@@ -2003,7 +2146,7 @@ async function syncFitnessSchedules(routines = getFitnessRoutines()) {
         const volumeNote = routine.kind === 'lift' ? ` · total volume ${fitnessVolume(routine)}` : '';
         const calorieNote = estimate.calories == null ? 'calorie estimate unavailable' : `estimated ${estimate.calories} kcal`;
         const recurrenceRule = fitnessSeriesRule(segment, weekday, first);
-        desired.set(`series:${seriesId}`, { event: { id: seriesId, title: `Workout: ${routine.name}`, description: `${routine.name}\n${details}${cardioNote}\nPlanned ${duration} min · ${calorieNote}${volumeNote}`, category: 'routine', startAt, endAt, allDay, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, calendarId: 'local-fitness', calendarName: 'Fitness', calendarColor: 'green', color: 'green', recurrenceRule, recurrenceExceptions: exceptionMap, recurringEventId: seriesId, fitnessSeriesId: seriesId, fitnessRoutineId: routine.id, fitnessWeekday: weekday, source_plugin_id: 'calendar' } });
+        desired.set(`series:${seriesId}`, { event: { id: seriesId, title: routine.name, description: `${routine.name}\n${details}${cardioNote}\nPlanned ${duration} min · ${calorieNote}${volumeNote}`, category: 'routine', startAt, endAt, allDay, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, calendarId: 'local-fitness', calendarName: 'Fitness', calendarColor: 'green', color: 'green', recurrenceRule, recurrenceExceptions: exceptionMap, recurringEventId: seriesId, fitnessSeriesId: seriesId, fitnessRoutineId: routine.id, fitnessWeekday: weekday, source_plugin_id: 'calendar' } });
       }
       }
     }
@@ -2213,7 +2356,7 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
   const itemList = form.querySelector('.fitness-edit-items');
   const addItem = (item = {}, routineKind = form.elements.kind.value) => {
     const row = document.createElement('fieldset'); row.className = 'fitness-edit-item';
-    row.innerHTML = `<button type="button" class="icon-button fitness-remove-item" data-remove-item aria-label="Remove ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="x" class="icon"></i></button>
+    row.innerHTML = `<button type="button" class="icon-button fitness-reorder-item" data-reorder-item title="Drag to reorder" aria-label="Drag to reorder ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="grip-vertical" class="icon"></i></button><button type="button" class="icon-button fitness-remove-item" data-remove-item aria-label="Remove ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="x" class="icon"></i></button>
       <label class="field">${routineKind === 'cardio' ? 'Cardio activity' : 'Movement'}<input name="name" required maxlength="60" placeholder="${routineKind === 'cardio' ? 'Cycling, running' : 'Squat, bench press'}"></label>
       <div class="fitness-lift-fields"><label class="field">Load<span class="fitness-weight-input"><input name="weight" type="number" min="0" max="2000" step="0.25" placeholder="60"><select name="weightUnit" aria-label="Weight unit"><option value="kg">kg</option><option value="lb">lb</option></select></span></label><label class="field">Implements<input name="implementCount" type="number" min="1" max="20" value="1" title="For example, enter 2 for a pair of dumbbells"></label><label class="field">Sets<input name="sets" type="number" min="1" max="30" value="4"></label><label class="field">Reps<input name="reps" type="number" min="1" max="100" value="10"></label></div>
       <div class="fitness-cardio-fields" hidden><label class="field">Activity type<select name="activityType"><option value="general">General cardio</option><option value="elliptical">Elliptical</option><option value="stationary-bike">Stationary bike</option><option value="other">Other</option></select></label><label class="field">Effort<select name="effort"><option value="easy">Easy</option><option value="moderate" selected>Moderate</option><option value="vigorous">Vigorous</option></select></label><label class="field">Duration (min)<input name="durationMinutes" type="number" min="1" max="600" value="20"></label></div>
@@ -2226,7 +2369,7 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
     for (const key of ['sets', 'reps', 'durationMinutes', 'met', 'activityType', 'effort']) if (item[key] != null && row.elements[key]) row.elements[key].value = item[key];
     if (item.kind === 'flexibility') { row.elements.flexSets.value = item.sets || 1; row.elements.flexReps.value = item.reps || 15; }
     row.querySelector('[data-remove-item]').addEventListener('click', () => row.remove());
-    itemList.append(row); renderIcons(row);
+    itemList.append(row); enableNativeReordering(itemList, '.fitness-edit-item', () => 'fitness-item', null, '[data-reorder-item]'); renderIcons(row);
   };
   const syncRoutineFields = () => {
     const kind = form.elements.kind.value;
@@ -2362,7 +2505,7 @@ function showFitnessScheduleForm(routine) {
     const calorieNote = scheduledEstimate.calories == null ? 'calorie estimate unavailable: add a weight reading in Health' : `estimated ${scheduledEstimate.calories} kcal`;
     const description = `${routine.name}\n${details}${cardioNote}\nPlanned ${scheduledMinutes} min · ${calorieNote}${volumeNote}`;
     try {
-      await window.dashboard.createCalendarEvent({ title: `Workout: ${routine.name}`, description, category: 'routine', startAt, endAt, allDay, calendarId: 'local-fitness', calendarName: 'Fitness', calendarColor: 'green', color: 'green', source_plugin_id: 'calendar' });
+      await window.dashboard.createCalendarEvent({ title: routine.name, description, category: 'routine', startAt, endAt, allDay, calendarId: 'local-fitness', calendarName: 'Fitness', calendarColor: 'green', color: 'green', source_plugin_id: 'calendar' });
       await window.dashboard.createTask({ title: routine.name, detail: `Workout planned · ${scheduledMinutes} min${allDay ? ' · all day' : ` · ${form.elements.time.value}`}${volumeNote}`, category: 'health', dueAt: allDay ? `${date}T12:00:00` : startAt });
       dialog.close(); window.location.hash = 'calendar';
     } catch (error) { save.disabled = false; window.alert(`Could not schedule workout: ${error.message}`); }
@@ -2379,10 +2522,12 @@ function renderTodos(tasks) {
   [openCount, dueToday, completedCount].forEach((value, index) => { if (summaryValues[index]) summaryValues[index].textContent = String(value); });
   pageRoot.querySelectorAll('.todo-list-card').forEach((list) => {
     const upcoming = list.classList.contains('upcoming-tasks');
-    const filtered = tasks.filter((task) => upcoming ? task.occurred_at.slice(0, 10) > today && !task.completed : task.occurred_at.slice(0, 10) === today);
+    const orderKey = upcoming ? 'local-dashboard-todo-order-upcoming' : 'local-dashboard-todo-order-today';
+    const filtered = orderByStoredIds(tasks.filter((task) => upcoming ? task.occurred_at.slice(0, 10) > today && !task.completed : task.occurred_at.slice(0, 10) === today), orderKey);
     if (!filtered.length) { const empty = document.createElement('p'); empty.className = 'todo-empty'; empty.textContent = upcoming ? 'Nothing coming up yet.' : 'No tasks due today. Add a task when you are ready.'; list.append(empty); }
     for (const task of filtered) {
-      const row = document.createElement('article'); row.className = `todo-row${task.completed ? ' is-complete' : ''}`;
+      const row = document.createElement('article'); row.className = `todo-row${task.completed ? ' is-complete' : ''}`; row.dataset.taskId = task.id;
+      const reorder = document.createElement('button'); reorder.type = 'button'; reorder.className = 'todo-reorder-handle'; reorder.dataset.todoReorderHandle = ''; reorder.title = 'Drag to reorder'; reorder.setAttribute('aria-label', `Drag to reorder ${task.title}`); reorder.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>';
       const checkbox = document.createElement('input'); checkbox.className = 'task-check'; checkbox.type = 'checkbox'; checkbox.checked = task.completed; checkbox.setAttribute('aria-label', `Complete ${task.title}`);
       checkbox.addEventListener('change', async () => { await window.dashboard.setTaskCompleted(task.id, checkbox.checked); row.classList.toggle('is-complete', checkbox.checked); });
       const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'task-copy task-edit-trigger'; copy.setAttribute('aria-label', `Edit ${task.title}`);
@@ -2390,9 +2535,11 @@ function renderTodos(tasks) {
       const detail = document.createElement('small'); detail.textContent = `${task.detail || 'No notes'} · Due ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(task.occurred_at))}`;
       copy.append(title, detail); copy.addEventListener('click', () => showTaskForm(task));
       const badge = document.createElement('span'); badge.className = task.category === 'health' ? 'badge badge-domain' : 'badge badge-neutral'; badge.textContent = task.category === 'health' ? 'Health plan' : 'Personal';
-      row.append(checkbox, copy, badge); list.append(row);
+      row.append(reorder, checkbox, copy, badge); list.append(row);
     }
+    enableNativeReordering(list, '.todo-row', (row) => row.dataset.taskId, orderKey, '[data-todo-reorder-handle]');
   });
+  renderIcons(pageRoot);
   const todayLabel = pageRoot.querySelector('.todo-list-heading p');
   if (todayLabel) todayLabel.textContent = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
 }
