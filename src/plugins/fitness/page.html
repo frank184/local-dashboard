@@ -1,0 +1,18 @@
+<section class="page-view personal-page fitness-page" id="fitness">
+  <header class="fitness-heading">
+    <div><p class="eyebrow">PERSONAL FITNESS</p><h1>Fitness</h1><p class="intro">Build routines around movements, loads, and total time. Then schedule them in your calendar.</p></div>
+    <button class="button button-primary" type="button" data-action="new-routine"><i data-lucide="plus" class="icon button-leading-icon" aria-hidden="true"></i> New routine</button>
+  </header>
+  <section class="fitness-week-summary" aria-label="Weekly workout summary">
+    <header class="fitness-week-heading"><h2>Weekly plan</h2><span id="fitness-week-caption"></span></header>
+    <div class="fitness-week-stats">
+      <div><span>Planned sessions / week</span><strong id="fitness-week-sessions">—</strong></div>
+      <div><span>Workout time</span><strong id="fitness-week-time">—</strong></div>
+      <div><span>Estimated calories</span><strong id="fitness-week-calories">—</strong></div>
+      <div><span>Strength volume</span><strong id="fitness-week-volume">—</strong></div>
+    </div>
+    <p class="fitness-week-weight">Calories use latest Health weight: <strong id="fitness-weight-basis">Loading Health…</strong><span id="fitness-weight-note">Latest Health weight</span></p>
+  </section>
+  <div class="fitness-section-heading"><div><h2>Your routines</h2><p>Stored on this device. Estimates are directional, not a measurement.</p></div></div>
+  <div id="fitness-routines" class="fitness-routine-list" aria-live="polite"></div>
+</section>

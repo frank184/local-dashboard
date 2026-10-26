@@ -48,6 +48,8 @@ class TodoTask extends ApplicationRecord {
       category: this.category,
       completed: this.completed,
       dueAt: this.dueAt,
+      fitnessRoutineId: this.fitnessRoutineId,
+      fitnessOccurrenceKey: this.fitnessOccurrenceKey,
     };
     this.payload_json = JSON.stringify(payload);
     if (current) {

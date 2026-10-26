@@ -57,6 +57,14 @@ class CalendarEvent extends ApplicationRecord {
       accountName: this.accountName,
       allDay: this.allDay,
       color: this.color,
+      timezone: this.timezone,
+      fitnessRoutineId: this.fitnessRoutineId,
+      fitnessOccurrenceKey: this.fitnessOccurrenceKey,
+      fitnessSeriesId: this.fitnessSeriesId,
+      fitnessWeekday: this.fitnessWeekday,
+      recurrenceRule: this.recurrenceRule,
+      recurrenceExceptions: this.recurrenceExceptions,
+      recurringEventId: this.recurringEventId,
     };
     this.payload_json = JSON.stringify(payload);
     if (current) {

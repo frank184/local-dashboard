@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "fitness",
+  "name": "Fitness",
+  "version": "0.1.0",
+  "domainId": "personal-health",
+  "kind": "feature",
+  "description": "Build local strength and cardio routines, estimate effort, and schedule workouts.",
+  "icon": "dumbbell",
+  "navigation": { "section": "Personal", "order": 35 },
+  "ui": { "page": "page.html", "contributes": ["navigation", "page"] },
+  "data": { "reads": ["calendar_events"], "writes": ["calendar_events"] }
+}

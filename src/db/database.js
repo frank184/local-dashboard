@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const builtInPlugins = ['calendar', 'todos', 'health', 'finance'].map((id) =>
+const builtInPlugins = ['calendar', 'todos', 'health', 'finance', 'fitness'].map((id) =>
   JSON.parse(fs.readFileSync(path.join(__dirname, '../plugins', id, 'manifest.json'), 'utf8')));
 const localCalendarModel = JSON.parse(fs.readFileSync(path.join(__dirname, '../plugins/calendar/local-calendars.json'), 'utf8'));
 const bundledIntegrations = ['google-calendar', 'outlook-calendar', 'fitbit'].map((id) =>
@@ -213,6 +213,16 @@ function migrate(db) {
     PRAGMA user_version = 11;
     COMMIT;
   `);
+
+  if (version < 12) {
+    const calendarContract = db.prepare("SELECT schema_json FROM data_contracts WHERE contract_id = 'calendar_events' AND version = 2").get();
+    if (calendarContract) {
+      const schema = JSON.parse(calendarContract.schema_json);
+      Object.assign(schema.fields, { recurrenceRule: 'string', recurrenceExceptions: 'object', recurringEventId: 'string', fitnessSeriesId: 'string', fitnessRoutineId: 'string', fitnessWeekday: 'string' });
+      db.prepare("UPDATE data_contracts SET schema_json = ? WHERE contract_id = 'calendar_events' AND version = 2").run(JSON.stringify(schema));
+    }
+    db.exec('PRAGMA user_version = 12;');
+  }
 }
 
 function seedBuiltIns(db) {
@@ -256,7 +266,8 @@ function seedBuiltIns(db) {
     VALUES ('calendar_events', 2, 'personal-productivity', ?)`).run(JSON.stringify({ type: 'object', fields: {
     title: 'string', startAt: 'date-time-or-date', endAt: 'date-time-or-date', location: 'string', description: 'string', calendarId: 'string',
     calendarName: 'string', source: 'string', sourceName: 'string', sourceAccount: 'string', allDay: 'boolean', timezone: 'string',
-    iCalUID: 'string', htmlLink: 'string', webLink: 'string',
+    iCalUID: 'string', htmlLink: 'string', webLink: 'string', recurrenceRule: 'string', recurrenceExceptions: 'object', recurringEventId: 'string',
+    fitnessSeriesId: 'string', fitnessRoutineId: 'string', fitnessWeekday: 'string',
   } }));
   const insertCalendarPlugin = db.prepare(`UPDATE plugins SET description = ?, icon = ? WHERE id = ? AND description = ''`);
   for (const plugin of builtInPlugins) insertCalendarPlugin.run(plugin.description, plugin.icon, plugin.id);
