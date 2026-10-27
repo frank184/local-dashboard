@@ -132,6 +132,8 @@ const pageRoot = document.querySelector('#page-root');
 const pageLabel = document.querySelector('#current-page-label');
 const themeToggle = document.querySelector('.theme-toggle');
 let currentPage = '';
+let workflowRunsPage = 0;
+const WORKFLOW_RUNS_PAGE_SIZE = 5;
 let sharedPluginOrder = null;
 let sharedPluginOrderPromise = null;
 let sidebarCollapsed = localStorage.getItem('local-dashboard-sidebar-collapsed') === 'true';
@@ -737,7 +739,7 @@ function renderPlugins(plugins) {
     const subline = document.createElement('small');
     subline.textContent = `${plugin.domain_id.replaceAll('-', ' ')} · v${plugin.version}`;
     titleBlock.append(title, subline);
-    identity.append(icon, titleBlock);
+    identity.append(titleBlock);
     top.append(identity);
     const dragHandle = document.createElement('span'); dragHandle.className = 'plugin-card-drag-handle'; dragHandle.title = `Reorder ${plugin.name}`; dragHandle.setAttribute('aria-hidden', 'true'); dragHandle.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>'; top.append(dragHandle);
     if (plugin.installed) {
@@ -764,6 +766,9 @@ function renderPlugins(plugins) {
     description.textContent = plugin.description || 'A built-in workspace capability.';
     const footer = document.createElement('div');
     footer.className = 'plugin-list-footer';
+    const stateGroup = document.createElement('div');
+    stateGroup.className = 'plugin-list-footer-state';
+    stateGroup.append(icon);
     if (plugin.installed) {
       const toggle = document.createElement('button');
       toggle.className = `plugin-enable-toggle${plugin.enabled ? ' is-enabled' : ''}`;
@@ -782,13 +787,14 @@ function renderPlugins(plugins) {
           await refreshPluginData();
         } catch (error) { window.alert(error.message); toggle.disabled = false; }
       });
-      footer.append(toggle);
+      stateGroup.append(toggle);
     } else {
       const notInstalled = document.createElement('span');
       notInstalled.className = 'badge badge-neutral';
       notInstalled.innerHTML = '<i></i>Not installed';
-      footer.append(notInstalled);
+      stateGroup.append(notInstalled);
     }
+    footer.append(stateGroup);
     card.append(top, description, footer);
     list.append(card);
   }
@@ -889,6 +895,14 @@ function makeIntegrationMark(provider) {
   return wrap;
 }
 
+function formatIntegrationSyncTime(value) {
+  const raw = String(value || '').trim();
+  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+  const date = new Date(hasTimezone ? normalized : `${normalized}Z`);
+  return Number.isNaN(date.getTime()) ? 'Last sync time unavailable' : `Last synced ${date.toLocaleString()}`;
+}
+
 function renderIntegrations(integrations) {
   integrationRecords = integrations;
   const connectionList = pageRoot.querySelector('#integration-connection-list');
@@ -941,7 +955,7 @@ function renderIntegrations(integrations) {
     const name = document.createElement('strong'); name.textContent = integration.display_name;
     const account = document.createElement('small'); account.textContent = integration.account_label || 'Account label not set';
     copy.append(name, account);
-    if (integration.last_sync_at) { const lastSync = document.createElement('small'); lastSync.textContent = `Last synced ${new Date(`${integration.last_sync_at}Z`).toLocaleString()}`; copy.append(lastSync); }
+    if (integration.last_sync_at) { const lastSync = document.createElement('small'); lastSync.textContent = formatIntegrationSyncTime(integration.last_sync_at); copy.append(lastSync); }
     const status = document.createElement('span'); status.className = `badge ${integration.status === 'connected' ? 'badge-success' : integration.status === 'error' ? 'badge-warning' : 'badge-neutral'}`;
     status.innerHTML = `<i></i>${integration.status === 'connected' ? 'Connected' : integration.status === 'paused' ? 'Paused' : integration.status === 'error' ? 'Sync error' : 'Setup required'}`;
     head.append(iconWrap, copy, status);
@@ -2694,7 +2708,11 @@ function renderWorkflows(workflows, runs) {
   const scheduled = workflows.filter((workflow) => workflow.trigger_type === 'schedule' || workflow.trigger_type === 'event');
   const actions = workflows.filter((workflow) => workflow.trigger_type === 'manual');
   const count = pageRoot.querySelector('#workflow-count'); if (count) count.textContent = `${scheduled.length} rule${scheduled.length === 1 ? '' : 's'}`;
-  const runCount = pageRoot.querySelector('#workflow-run-count'); if (runCount) runCount.textContent = `${runs.length} recent`;
+  const runPageCount = Math.max(1, Math.ceil(runs.length / WORKFLOW_RUNS_PAGE_SIZE));
+  workflowRunsPage = Math.min(workflowRunsPage, runPageCount - 1);
+  const runPageStart = workflowRunsPage * WORKFLOW_RUNS_PAGE_SIZE;
+  const visibleRuns = runs.slice(runPageStart, runPageStart + WORKFLOW_RUNS_PAGE_SIZE);
+  const runCount = pageRoot.querySelector('#workflow-run-count'); if (runCount) runCount.textContent = `${runs.length} run${runs.length === 1 ? '' : 's'}`;
   const actionCount = pageRoot.querySelector('#workflow-action-count'); if (actionCount) actionCount.textContent = `${actions.length} task${actions.length === 1 ? '' : 's'}`;
   const makeTable = (container, headings, className) => {
     container.removeAttribute('tabindex'); container.removeAttribute('role'); container.removeAttribute('aria-label');
@@ -2710,14 +2728,28 @@ function renderWorkflows(workflows, runs) {
     thead.append(header); table.append(thead); const body = document.createElement('tbody'); table.append(body); container.append(table); return body;
   };
   const runBody = makeTable(runList, ['Workflow', 'Run details', 'Started', 'Status'], 'workflow-history-table');
-  if (!runs.length) { const row = document.createElement('tr'); row.className = 'workflow-empty-row'; const cell = document.createElement('td'); cell.colSpan = 4; cell.textContent = 'Workflow executions will appear here.'; row.append(cell); runBody.append(row); }
-  for (const run of runs) {
+  if (!visibleRuns.length) { const row = document.createElement('tr'); row.className = 'workflow-empty-row'; const cell = document.createElement('td'); cell.colSpan = 4; cell.textContent = 'Workflow executions will appear here.'; row.append(cell); runBody.append(row); }
+  for (const run of visibleRuns) {
     const row = document.createElement('tr'); row.className = 'workflow-run-row';
     const title = document.createElement('th'); title.scope = 'row'; title.textContent = run.workflow_name;
     const execution = document.createElement('td'); execution.className = 'workflow-run-details'; execution.textContent = run.error_text || (run.result?.stage ? `Finance import · ${run.result.stage.replaceAll('_', ' ')}${run.result.filename ? ` · ${run.result.filename}` : ''}${run.result.importedCount !== undefined ? ` · ${run.result.importedCount} rows` : ''}` : (run.result?.recordCount !== undefined ? `${run.result.recordCount} records` : '—'));
     const started = document.createElement('td'); started.textContent = new Date(`${run.started_at}Z`).toLocaleString();
     const result = document.createElement('td'); const status = document.createElement('span'); status.className = `workflow-run-status is-${run.status}`; status.textContent = run.status; result.append(status);
     row.append(title, execution, started, result); runBody.append(row);
+  }
+  const runPagination = pageRoot.querySelector('#workflow-run-pagination');
+  if (runPagination) {
+    runPagination.replaceChildren();
+    runPagination.hidden = runs.length <= WORKFLOW_RUNS_PAGE_SIZE;
+    if (!runPagination.hidden) {
+      const range = document.createElement('span'); range.className = 'workflow-pagination-range'; range.setAttribute('aria-live', 'polite');
+      range.textContent = `${runPageStart + 1}–${Math.min(runPageStart + WORKFLOW_RUNS_PAGE_SIZE, runs.length)} of ${runs.length}`;
+      const previous = document.createElement('button'); previous.type = 'button'; previous.className = 'button button-secondary button-small'; previous.textContent = 'Previous'; previous.disabled = workflowRunsPage === 0;
+      previous.addEventListener('click', () => { workflowRunsPage -= 1; renderWorkflows(workflows, runs); });
+      const next = document.createElement('button'); next.type = 'button'; next.className = 'button button-secondary button-small'; next.textContent = 'Next'; next.disabled = workflowRunsPage >= runPageCount - 1;
+      next.addEventListener('click', () => { workflowRunsPage += 1; renderWorkflows(workflows, runs); });
+      runPagination.append(range, previous, next);
+    }
   }
 
   const workflowBody = makeTable(list, ['Automation', 'Trigger', 'Recent activity', 'State', ''], 'workflow-config-table');

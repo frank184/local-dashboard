@@ -561,13 +561,16 @@ body.is-workflows-page.is-workflow-sidepanel-collapsed { --workflow-rail-width: 
 .workflow-table { width: 100%; table-layout: fixed; border-collapse: collapse; background: #fff; text-align: left; }
 .workflow-table thead { background: #f7f9f7; }
 .workflow-table thead th { padding: 12px 14px; border-bottom: 1px solid #dce3dd; color: #536157; font-size: 9px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
-.workflow-table td, .workflow-table tbody th { padding: 20px 14px; border-top: 1px solid #e1e7e2; vertical-align: middle; }
+.workflow-table td, .workflow-table tbody th { padding: 14px 14px; border-top: 1px solid #e1e7e2; vertical-align: middle; }
 .workflow-table tbody td { white-space: normal; }
 .workflow-table tbody th { min-width: 0; overflow-wrap: break-word; white-space: normal; color: var(--color-text); font-size: 12px; font-weight: 600; letter-spacing: normal; text-align: left; text-transform: none; }
 .workflow-history-table th:first-child { width: 27%; }
 .workflow-history-table th:nth-child(2) { width: 15%; }
 .workflow-history-table th:nth-child(3) { width: 38%; }
 .workflow-history-table th:nth-child(4) { width: 20%; }
+.workflow-run-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 9px 10px; border: 1px solid var(--color-border); border-top: 0; border-radius: 0 0 7px 7px; background: var(--color-surface); }
+.workflow-run-pagination[hidden] { display: none; }
+.workflow-pagination-range { margin-right: auto; color: var(--color-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .workflow-config-table th:first-child { width: 24%; }
 .workflow-config-table th:nth-child(2) { width: 20%; }
 .workflow-config-table th:nth-child(3) { width: 25%; }
@@ -1814,13 +1817,13 @@ main, .content, #page-root, .page-view { min-width: 0; }
 
 /* Dense connection cards mirror the available integration cards. */
 .integration-connection-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.integration-connection-card { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; align-items: start; gap: 12px; min-height: 188px; padding: 16px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.integration-connection-card { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; align-items: start; gap: 7px; min-height: 0; padding: 12px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .integration-connection-head { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: start; gap: 11px; min-width: 0; }
 .integration-connection-copy { min-width: 0; gap: 4px; }
 .integration-connection-copy strong { font-size: 12px; }
 .integration-connection-copy small { overflow-wrap: anywhere; line-height: 1.4; }
 .integration-connection-head > .badge { margin-top: 2px; white-space: nowrap; }
-.integration-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: auto; padding-top: 9px; border-top: 1px solid var(--color-border); }
+.integration-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 0; padding-top: 6px; border-top: 1px solid var(--color-border); }
 .integration-row-actions .integration-action { flex: 0 0 29px; width: 29px; height: 29px; color: var(--color-muted); }
 .integration-row-actions .integration-action:hover { color: var(--color-primary); }
 .integration-row-actions .integration-action-danger { color: var(--color-danger); }
@@ -1851,7 +1854,7 @@ main, .content, #page-root, .page-view { min-width: 0; }
 }
 
 /* Plugin cards share the integrations grid, with their primary state control in the footer. */
-.plugin-list-card { display: grid; grid-template-rows: auto 1fr auto; min-height: 188px; padding: 16px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.plugin-list-card { display: grid; grid-template-rows: auto auto; min-height: 0; padding: 13px; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .plugin-list-card-top { min-width: 0; }
 .plugin-card-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 3px; }
 .plugin-card-action { width: 28px; height: 28px; color: var(--color-muted); }
@@ -1861,8 +1864,11 @@ main, .content, #page-root, .page-view { min-width: 0; }
 .plugin-list-card .plugin-card-identity { min-width: 0; }
 .plugin-list-card .plugin-card-identity > div { min-width: 0; }
 .plugin-list-card .plugin-card-identity h3 { overflow-wrap: anywhere; }
-.plugin-list-description { min-height: 0; margin: 14px 0; }
-.plugin-list-footer { align-items: center; min-height: 41px; padding-top: 9px; border-top: 1px solid var(--color-border); }
+.plugin-list-description { min-height: 0; margin: 8px 0 10px; }
+.plugin-list-footer { align-items: center; min-height: 0; padding-top: 8px; border-top: 1px solid var(--color-border); }
+.plugin-list-footer-state { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.plugin-list-footer-state .plugin-app-icon { flex-basis: 30px; width: 30px; height: 30px; border-radius: 8px; }
+.plugin-list-footer-state .plugin-app-icon .icon { width: 16px; height: 16px; }
 .plugin-enable-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0; border: 0; color: var(--color-muted); background: transparent; font: inherit; font-size: 9px; font-weight: 550; cursor: pointer; }
 .plugin-enable-toggle.is-enabled { color: var(--color-primary); }
 .plugin-enable-toggle:disabled { opacity: .55; cursor: wait; }
