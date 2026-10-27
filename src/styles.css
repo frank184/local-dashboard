@@ -1378,12 +1378,15 @@ body.is-calendar-page #page-root > .calendar-page { height: calc(100dvh - 40px);
 /* Press-and-hold calendar moves and lightweight list reordering. */
 .calendar-event-block.is-hold-draggable,
 .calendar-all-day-event.is-hold-draggable { cursor: grab; touch-action: none; }
+.calendar-all-day-event.is-hold-draggable { position: relative; }
 .calendar-event-block.is-holding-to-drag::after,
 .calendar-all-day-event.is-holding-to-drag::after {
   position: absolute; right: 5px; bottom: 3px; left: 5px; height: 3px; border-radius: 99px;
   background: var(--color-primary); content: ""; transform: scaleX(0); transform-origin: left center;
-  transition: transform var(--drag-hold-duration, 1000ms) linear;
+  transition: transform var(--drag-hold-duration, 500ms) linear;
 }
+.calendar-event-block.is-holding-to-drag::before,
+.calendar-all-day-event.is-holding-to-drag::before { position: absolute; z-index: 4; top: -21px; left: 0; width: max-content; padding: 3px 6px; border-radius: 5px; background: var(--color-primary); color: #fff; content: "Hold to move"; font-size: 8px; font-weight: 600; line-height: 1.3; pointer-events: none; }
 .calendar-event-block.is-holding-to-drag,
 .calendar-all-day-event.is-holding-to-drag { outline: 1px solid color-mix(in srgb, var(--color-primary) 42%, transparent); }
 .calendar-event-block.is-holding-to-drag::after,
@@ -1392,6 +1395,9 @@ body.is-calendar-page #page-root > .calendar-page { height: calc(100dvh - 40px);
 .calendar-all-day-event.is-drag-source { opacity: .2; filter: grayscale(.8); }
 .calendar-event-drag-ghost { position: fixed !important; z-index: 9999 !important; right: auto !important; bottom: auto !important; opacity: .96; pointer-events: none !important; transform: none; box-shadow: 0 12px 28px rgba(20, 35, 25, .28) !important; }
 .calendar-all-day-event.calendar-event-drag-ghost { position: fixed !important; }
+.calendar-event-drag-ghost.is-snapped { outline: 2px solid var(--color-primary) !important; box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-primary) 20%, transparent), 0 12px 28px rgba(20, 35, 25, .28) !important; }
+.calendar-drag-time-badge { position: absolute; z-index: 3; bottom: calc(100% + 5px); left: 0; width: max-content; max-width: 220px; padding: 4px 7px; border-radius: 5px; background: var(--color-text); color: var(--color-surface); font-size: 9px; font-weight: 650; line-height: 1.25; white-space: nowrap; box-shadow: 0 3px 10px rgba(15, 30, 20, .2); }
+.calendar-event-drag-ghost.is-snapped .calendar-drag-time-badge { background: var(--color-primary); color: #fff; }
 .calendar-day-column.is-drop-target,
 .calendar-all-day-cell.is-drop-target { outline: 2px dashed var(--color-primary); outline-offset: -3px; background: color-mix(in srgb, var(--color-primary-soft) 64%, transparent); }
 .is-dragging { opacity: .28; transform: scale(.992); transition: opacity .15s ease, transform .15s ease; }
@@ -1664,10 +1670,14 @@ body:not(.is-calendar-page) { overflow-x: clip; }
 .fitness-routine-header p { margin: 5px 0 0; color: var(--color-muted); font-size: 10px; }
 .fitness-calorie-breakdown { display: block; margin-top: 4px; color: var(--color-muted); font-size: 9px; }
 .fitness-card-actions { display: flex; gap: 7px; flex: 0 0 auto; }
-.fitness-item-list { display: grid; gap: 0; margin-top: 12px; border-top: 1px solid var(--color-border); }
-.fitness-item-row { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--color-border); font-size: 10px; }
-.fitness-item-row strong { font-weight: 560; }
-.fitness-item-row span { color: var(--color-muted); text-align: right; }
+.fitness-matrix-scroll { width: 100%; margin-top: 12px; overflow-x: auto; border-top: 1px solid var(--color-border); scrollbar-width: thin; }
+.fitness-matrix { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; color: var(--color-text); font-size: 10px; }
+.fitness-matrix th, .fitness-matrix td { min-width: 112px; max-width: 240px; padding: 8px 11px; border-bottom: 1px solid var(--color-border); text-align: left; white-space: nowrap; }
+.fitness-matrix thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface); font-size: 10px; font-weight: 620; }
+.fitness-matrix thead th:first-child { left: 0; z-index: 3; min-width: 98px; color: var(--color-muted); }
+.fitness-matrix tbody th { position: sticky; left: 0; z-index: 2; min-width: 98px; background: var(--color-surface); color: var(--color-muted); font-weight: 520; }
+.fitness-matrix tbody td { color: var(--color-text); font-variant-numeric: tabular-nums; }
+.fitness-matrix tbody tr:last-child th, .fitness-matrix tbody tr:last-child td { border-bottom: 0; }
 .fitness-post-workout { margin: 10px 0 0; padding-top: 9px; color: var(--color-muted); font-size: 10px; }
 .fitness-empty { margin-top: 10px; }
 .fitness-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1697,17 +1707,18 @@ body:not(.is-calendar-page) { overflow-x: clip; }
 .fitness-post-workout-inputs[hidden] { display: none; }
 .fitness-form-heading { display: flex; align-items: center; justify-content: space-between; padding-bottom: 7px; border-bottom: 1px solid var(--color-border); }
 .fitness-form-heading strong { font-size: 11px; }
-.fitness-edit-items { display: grid; gap: 9px; }
-.fitness-edit-item { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; min-width: 0; padding: 11px; border: 1px solid var(--color-border); border-radius: var(--radius-small); }
+.fitness-edit-items { display: grid; gap: 7px; }
+.fitness-edit-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; margin: 0; padding: 7px; border: 1px solid var(--color-border); border-radius: 9px; background: color-mix(in srgb, var(--color-surface) 76%, var(--color-canvas)); }
+.fitness-item-topline { position: relative; min-width: 0; }
+.fitness-item-topline > .field { gap: 4px; }
+.fitness-item-topline > .field input { padding-right: 58px; }
 .fitness-remove-item { position: absolute; top: 7px; right: 7px; width: 24px; height: 24px; }
-.fitness-edit-item > .field { grid-column: 1 / -1; }
-.fitness-edit-item .fitness-lift-fields { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
-.fitness-edit-item .fitness-lift-fields > .field:first-child { grid-column: span 2; }
+.fitness-edit-item .fitness-lift-fields { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 8px; min-width: 0; }
+.fitness-edit-item .fitness-lift-fields > .field, .fitness-edit-item .fitness-cardio-fields > .field, .fitness-edit-item .fitness-flexibility-fields > .field { min-width: 0; gap: 4px; }
+.fitness-edit-item .field input, .fitness-edit-item .field select { padding: 6px 8px; }
+.fitness-edit-item .fitness-combined-input { min-width: 0; padding-top: 8px; padding-bottom: 8px; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
 .fitness-edit-item .fitness-cardio-fields { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.fitness-edit-item .fitness-flexibility-fields { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-.fitness-weight-input { display: flex; gap: 5px; min-width: 0; }
-.fitness-edit-item .fitness-weight-input input { flex: 1 1 0; width: 0 !important; min-width: 0; }
-.fitness-edit-item .fitness-weight-input select { flex: 0 0 58px; width: 58px !important; padding-right: 5px !important; padding-left: 7px !important; }
+.fitness-edit-item .fitness-flexibility-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .fitness-form [hidden], .fitness-edit-item [hidden], .fitness-schedule-form [hidden] { display: none !important; }
 .fitness-schedule-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .fitness-schedule-form .field-wide { grid-column: 1 / -1; }
@@ -1721,14 +1732,13 @@ body:not(.is-calendar-page) { overflow-x: clip; }
   .fitness-week-weight span { display: block; margin: 3px 0 0; }
   .fitness-routine-header { flex-direction: column; }
   .fitness-card-actions { width: 100%; }
-  .fitness-item-row { flex-direction: column; gap: 3px; }
-  .fitness-item-row span { text-align: left; }
-  .fitness-edit-item { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .fitness-edit-item .fitness-lift-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .fitness-edit-item .fitness-lift-fields > .field:first-child { grid-column: 1 / -1; }
+  .fitness-matrix th, .fitness-matrix td { min-width: 100px; padding-right: 9px; padding-left: 9px; }
+  .fitness-matrix thead th:first-child, .fitness-matrix tbody th { min-width: 82px; }
+  .fitness-edit-item .fitness-lift-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .fitness-item-topline > .field input { padding-right: 54px; }
   .fitness-post-workout-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fitness-post-workout-inputs .field:first-child { grid-column: 1 / -1; }
-  .fitness-edit-item .fitness-cardio-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fitness-edit-item .fitness-cardio-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .fitness-recurrence-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

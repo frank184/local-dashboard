@@ -132,6 +132,8 @@ const pageRoot = document.querySelector('#page-root');
 const pageLabel = document.querySelector('#current-page-label');
 const themeToggle = document.querySelector('.theme-toggle');
 let currentPage = '';
+let sharedPluginOrder = null;
+let sharedPluginOrderPromise = null;
 let sidebarCollapsed = localStorage.getItem('local-dashboard-sidebar-collapsed') === 'true';
 let activeCharts = [];
 let healthWeightModeCleanup = null;
@@ -240,6 +242,7 @@ themeToggle?.addEventListener('click', () => applyTheme(document.documentElement
 async function loadPluginNavigation() {
   try {
     const { plugins } = await window.dashboard.getPageData('navigation');
+    await ensurePluginOrder();
     renderFeatureNavigation(plugins);
     updateActiveNavigation(currentPage);
   } catch (error) {
@@ -269,6 +272,7 @@ function renderIcons(root) {
 }
 
 function storedOrder(key) {
+  if (key === 'local-dashboard-plugin-order' && Array.isArray(sharedPluginOrder)) return sharedPluginOrder;
   try {
     const saved = localStorage.getItem(key);
     if (saved != null) { const value = JSON.parse(saved); return Array.isArray(value) ? value : []; }
@@ -281,6 +285,23 @@ function storedOrder(key) {
     const value = JSON.parse(saved || '[]'); return Array.isArray(value) ? value : [];
   }
   catch { return []; }
+}
+
+function ensurePluginOrder() {
+  if (sharedPluginOrderPromise) return sharedPluginOrderPromise;
+  sharedPluginOrderPromise = (async () => {
+    let saved = null;
+    try { saved = await window.dashboard.getAppSetting('plugin-order'); }
+    catch (error) { console.warn('Could not load saved plugin order', error); }
+    sharedPluginOrder = Array.isArray(saved) ? saved : storedOrder('local-dashboard-plugin-order');
+    localStorage.setItem('local-dashboard-plugin-order', JSON.stringify(sharedPluginOrder));
+    if (!Array.isArray(saved) && sharedPluginOrder.length) {
+      try { await window.dashboard.setAppSetting('plugin-order', sharedPluginOrder); }
+      catch (error) { console.warn('Could not migrate plugin order to app storage', error); }
+    }
+    return sharedPluginOrder;
+  })();
+  return sharedPluginOrderPromise;
 }
 
 function orderByStoredIds(items, key, getId = (item) => item.id) {
@@ -333,9 +354,15 @@ function enableNativeReordering(container, selector, getId, storageKey, handleSe
       let nextIndex = 0;
       const merged = previous.map((id) => visible.has(id) ? visibleIds[nextIndex++] : id);
       for (const id of visibleIds) if (!previous.includes(id)) merged.push(id);
-      localStorage.setItem(storageKey, JSON.stringify(merged.length ? merged : visibleIds));
+      const nextOrder = merged.length ? merged : visibleIds;
+      localStorage.setItem(storageKey, JSON.stringify(nextOrder));
       if (storageKey === 'local-dashboard-plugin-order') {
-        void window.dashboard.getPageData('navigation').then(({ plugins }) => renderFeatureNavigation(plugins));
+        sharedPluginOrder = nextOrder;
+        void (async () => {
+          await window.dashboard.setAppSetting('plugin-order', nextOrder);
+          const { plugins } = await window.dashboard.getPageData('navigation');
+          renderFeatureNavigation(plugins);
+        })().catch((error) => console.error('Could not persist plugin order', error));
       }
     }
   });
@@ -624,6 +651,7 @@ async function hydratePage(pageId) {
   if (pageId === 'plugins/calendar/settings' || pageId === 'plugins/health/settings') return;
   if (!['plugins', 'integrations', 'workflows', 'calendar', 'todos', 'health', 'finance', 'fitness'].includes(pageId)) return;
   try {
+    if (pageId === 'plugins') await ensurePluginOrder();
     if (pageId === 'calendar') {
       try { await syncFitnessSchedules(getFitnessRoutines()); }
       catch (error) { console.warn('Could not refresh Fitness Calendar/Todo schedule', error); }
@@ -784,6 +812,7 @@ async function refreshPluginData() {
   const [{ plugins }, { plugins: navigation }] = await Promise.all([
     window.dashboard.getPageData('plugins'), window.dashboard.getPageData('navigation'),
   ]);
+  await ensurePluginOrder();
   renderPlugins(plugins);
   renderFeatureNavigation(navigation);
 }
@@ -1555,14 +1584,8 @@ function calendarDragTargetAt(clientX, clientY) {
 
 function snapCalendarDrop(event, target) {
   if (target.allDay) return { startAt: target.date, endAt: target.date, allDay: true };
-  const { startHour, endHour } = normalizeCalendarSettings(calendarSettings);
-  const bounds = target.element.getBoundingClientRect();
-  const minutesFromTop = Math.max(0, (target.clientY - bounds.top) * (60 / 64));
-  let minuteOfDay = Math.max(startHour * 60, Math.min(endHour * 60 - 15, startHour * 60 + Math.round(minutesFromTop)));
-  const nearestHalfHour = Math.round(minuteOfDay / 30) * 30;
-  if (Math.abs(nearestHalfHour - minuteOfDay) <= 2) minuteOfDay = nearestHalfHour;
-  const hour = Math.floor(minuteOfDay / 60); const minute = minuteOfDay % 60;
-  const startAt = `${target.date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`;
+  const preview = calendarTimedDropPreview(target);
+  const startAt = `${target.date}T${String(preview.hour).padStart(2, '0')}:${String(preview.minute).padStart(2, '0')}:00`;
   const routine = event.fitnessRoutineId ? getFitnessRoutines().find((item) => item.id === event.fitnessRoutineId) : null;
   const duration = event.allDay
     ? Math.max(30, fitnessEstimate(routine || { kind: 'lift', expectedDurationMinutes: 60, items: [] }).minutes || 60)
@@ -1571,10 +1594,22 @@ function snapCalendarDrop(event, target) {
   return { startAt, endAt, allDay: false };
 }
 
+function calendarTimedDropPreview(target) {
+  const { startHour, endHour } = normalizeCalendarSettings(calendarSettings);
+  const bounds = target.element.getBoundingClientRect();
+  const minutesFromTop = Math.max(0, (target.clientY - bounds.top) * (60 / 64));
+  let minuteOfDay = Math.max(startHour * 60, Math.min(endHour * 60 - 15, startHour * 60 + Math.round(minutesFromTop)));
+  const nearestHalfHour = Math.round(minuteOfDay / 30) * 30;
+  const snapped = Math.abs(nearestHalfHour - minuteOfDay) <= 2.5;
+  if (snapped) minuteOfDay = nearestHalfHour;
+  const boundedMinute = Math.min(endHour * 60 - 15, Math.max(startHour * 60, minuteOfDay));
+  return { hour: Math.floor(boundedMinute / 60), minute: boundedMinute % 60, minuteOfDay: boundedMinute, snapped, bounds, startHour };
+}
+
 function attachCalendarEventDrag(block, event) {
   if (calendarView !== 'week' || event.integration_id || event.source_plugin_id !== 'calendar') return;
   if (event.isRecurringOccurrence && (!event.fitnessRoutineId || !getFitnessRoutines().some((routine) => routine.id === event.fitnessRoutineId))) return;
-  const state = { timer: null, pointerId: null, startX: 0, startY: 0, lastX: 0, lastY: 0, offsetX: 0, offsetY: 0, ready: false, ghost: null, target: null, suppressClick: false };
+  const state = { timer: null, pointerId: null, startX: 0, startY: 0, lastX: 0, lastY: 0, offsetX: 0, offsetY: 0, unlockX: 0, unlockY: 0, movedAfterUnlock: false, ready: false, ghost: null, target: null, suppressClick: false };
   block.classList.add('is-hold-draggable');
   block.addEventListener('click', (click) => {
     if (!state.suppressClick) return;
@@ -1593,36 +1628,50 @@ function attachCalendarEventDrag(block, event) {
     const rect = block.getBoundingClientRect();
     state.pointerId = pointer.pointerId; state.startX = pointer.clientX; state.startY = pointer.clientY; state.lastX = pointer.clientX; state.lastY = pointer.clientY;
     state.offsetX = pointer.clientX - rect.left; state.offsetY = pointer.clientY - rect.top; state.ready = false;
+    state.movedAfterUnlock = false;
     block.classList.add('is-holding-to-drag');
-    block.style.setProperty('--drag-hold-duration', `${event.allDay ? 1500 : 1000}ms`);
+    block.style.setProperty('--drag-hold-duration', '500ms');
     try { block.setPointerCapture(pointer.pointerId); } catch {}
     state.timer = setTimeout(() => {
-      state.ready = true; state.ghost = block.cloneNode(true); state.ghost.removeAttribute('id'); state.ghost.className = `${block.className} calendar-event-drag-ghost`;
+      state.ready = true; state.unlockX = state.lastX; state.unlockY = state.lastY;
+      state.ghost = block.cloneNode(true); state.ghost.removeAttribute('id'); state.ghost.className = `${block.className} calendar-event-drag-ghost`;
       state.ghost.style.width = `${rect.width}px`; state.ghost.style.left = `${state.lastX - state.offsetX}px`; state.ghost.style.top = `${state.lastY - state.offsetY}px`;
+      const timeBadge = document.createElement('span'); timeBadge.className = 'calendar-drag-time-badge'; timeBadge.textContent = event.allDay ? 'All day' : 'Move to a time'; state.ghost.append(timeBadge);
       document.body.append(state.ghost); block.classList.add('is-drag-source');
-    }, event.allDay ? 1500 : 1000);
+    }, 500);
   });
   block.addEventListener('pointermove', (pointer) => {
     if (pointer.pointerId !== state.pointerId) return;
     state.lastX = pointer.clientX; state.lastY = pointer.clientY;
     if (!state.ready) {
-      if (Math.hypot(pointer.clientX - state.startX, pointer.clientY - state.startY) > 9) {
-        clearHold(); state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 700);
-      }
+      if (Math.hypot(pointer.clientX - state.startX, pointer.clientY - state.startY) > 9 && !state.suppressClick) { state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 700); }
       return;
     }
+    if (Math.hypot(pointer.clientX - state.unlockX, pointer.clientY - state.unlockY) > 2) state.movedAfterUnlock = true;
     pointer.preventDefault();
-    state.ghost.style.left = `${pointer.clientX - state.offsetX}px`; state.ghost.style.top = `${pointer.clientY - state.offsetY}px`;
+    state.ghost.style.left = `${pointer.clientX - state.offsetX}px`;
     const target = calendarDragTargetAt(pointer.clientX, pointer.clientY);
     if (state.target !== target?.element) { state.target?.classList.remove('is-drop-target'); state.target = target?.element || null; state.target?.classList.add('is-drop-target'); }
-    block._calendarDropTarget = target ? { ...target, clientY: pointer.clientY - state.offsetY } : null;
+    const anchoredTarget = target ? { ...target, clientY: pointer.clientY - state.offsetY } : null;
+    block._calendarDropTarget = anchoredTarget;
+    if (anchoredTarget && !anchoredTarget.allDay) {
+      const preview = calendarTimedDropPreview(anchoredTarget);
+      const snappedTop = preview.bounds.top + ((preview.minuteOfDay - preview.startHour * 60) * 64 / 60);
+      state.ghost.style.top = `${snappedTop}px`;
+      state.ghost.classList.toggle('is-snapped', preview.snapped);
+      state.ghost.querySelector('.calendar-drag-time-badge').textContent = `${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(2020, 0, 1, preview.hour, preview.minute))}${preview.snapped ? ' · snapped' : ''}`;
+    } else {
+      state.ghost.style.top = `${pointer.clientY - state.offsetY}px`;
+      state.ghost.classList.remove('is-snapped');
+      state.ghost.querySelector('.calendar-drag-time-badge').textContent = 'All day';
+    }
   });
   block.addEventListener('pointerup', async (pointer) => {
     if (pointer.pointerId !== state.pointerId) return;
-    const target = state.ready ? block._calendarDropTarget : null;
-    const didDrag = state.ready;
+    const target = state.ready && state.movedAfterUnlock ? block._calendarDropTarget : null;
+    const didDrag = state.ready && state.movedAfterUnlock;
     clearDrag(); state.pointerId = null; block._calendarDropTarget = null;
-    if (didDrag) { state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 700); }
+    if (didDrag || Math.hypot(pointer.clientX - state.startX, pointer.clientY - state.startY) > 9) { state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 700); }
     if (!didDrag || !target) return;
     try { await persistCalendarEventDrop(event, snapCalendarDrop(event, target)); }
     catch (error) { window.alert(`Could not move event: ${error.message}`); }
@@ -2298,6 +2347,31 @@ function fitnessWeightParts(item) {
   };
 }
 
+function fitnessLoadInputValue(item) {
+  const { value, unit } = fitnessWeightParts(item);
+  if (value === '') return '';
+  const count = Number(item.implementCount) || 1;
+  return `${count > 1 ? `${count} × ` : ''}${value} ${unit}`;
+}
+
+function parseFitnessLoadInput(rawValue, fallbackUnit = 'lb') {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return { valid: true, weight: '', weightUnit: fallbackUnit, implementCount: 1 };
+  const match = raw.match(/^(?:(\d+(?:[.,]\d+)?)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(kg|kgs?|lb|lbs?|pounds?)?$/i);
+  if (!match) return { valid: false };
+  const implementCount = match[1] ? Number(match[1].replace(',', '.')) : 1;
+  const weight = Number(match[2].replace(',', '.'));
+  const weightUnit = /^kg/i.test(match[3] || fallbackUnit) ? 'kg' : 'lb';
+  return { valid: Number.isInteger(implementCount) && implementCount >= 1 && implementCount <= 20 && weight >= 0 && weight <= 2000, weight, weightUnit, implementCount };
+}
+
+function parseFitnessSetRepInput(rawValue, maxSets = 30, maxReps = 100) {
+  const match = String(rawValue || '').trim().match(/^(\d+)\s*[x×]\s*(\d+)$/i);
+  if (!match) return { valid: false };
+  const sets = Number(match[1]); const reps = Number(match[2]);
+  return { valid: sets >= 1 && sets <= maxSets && reps >= 1 && reps <= maxReps, sets, reps };
+}
+
 function fitnessWeightLabel(item) {
   if (item.weight == null || item.weight === '') return 'Bodyweight';
   const { value, unit } = fitnessWeightParts(item);
@@ -2338,16 +2412,6 @@ function fitnessPostWorkoutMET(postWorkout) {
   return postWorkout?.activityType ? fitnessCardioMET(postWorkout.activityType, postWorkout.effort || 'moderate') : Number(postWorkout?.met) || 6;
 }
 
-function nextFitnessDate(days = []) {
-  const dayIndexes = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
-  const today = new Date();
-  const todayIndex = today.getDay();
-  const offsets = days.map((day) => ((dayIndexes[day] - todayIndex + 7) % 7));
-  if (!offsets.length) return localDateKey(today);
-  today.setDate(today.getDate() + Math.min(...offsets));
-  return localDateKey(today);
-}
-
 function renderFitness() {
   if (currentPage !== 'fitness') return;
   const routines = getFitnessRoutines();
@@ -2383,7 +2447,6 @@ function renderFitness() {
     const calorieBreakdown = document.createElement('small'); calorieBreakdown.className = 'fitness-calorie-breakdown'; calorieBreakdown.textContent = estimate.breakdown; title.append(calorieBreakdown);
     const actions = document.createElement('div'); actions.className = 'fitness-card-actions';
     const edit = document.createElement('button'); edit.className = 'button button-secondary button-small'; edit.type = 'button'; edit.textContent = 'Edit'; edit.addEventListener('click', () => showFitnessRoutineForm(routine));
-    const schedule = document.createElement('button'); schedule.className = 'button button-primary button-small'; schedule.type = 'button'; schedule.textContent = 'Add one-off'; schedule.addEventListener('click', () => showFitnessScheduleForm(routine));
     const remove = document.createElement('button'); remove.className = 'button button-secondary button-small'; remove.type = 'button'; remove.textContent = 'Delete'; remove.addEventListener('click', async () => {
       if (!await showConfirm('Delete this routine?', `“${routine.name}” will be removed from this device, along with its upcoming weekly Calendar events and Todo tasks. Past entries will stay in place.`, 'Delete routine')) return;
       const remaining = getFitnessRoutines().filter((candidate) => candidate.id !== routine.id);
@@ -2391,15 +2454,26 @@ function renderFitness() {
       try { await syncFitnessSchedules(remaining); } catch (error) { window.alert(`Routine deleted, but future Calendar/Todo entries could not be removed: ${error.message}`); }
       renderFitness();
     });
-    actions.append(edit, schedule, remove); header.append(title, actions); card.append(header);
-    const items = document.createElement('div'); items.className = 'fitness-item-list';
-    for (const item of routine.items || []) {
-      const row = document.createElement('div'); row.className = 'fitness-item-row';
-      const label = document.createElement('strong'); label.textContent = item.name;
-      const detail = document.createElement('span'); detail.textContent = item.kind === 'cardio' ? `${fitnessCardioLabel(item.activityType)} · ${item.durationMinutes} min · ${item.effort || 'moderate'}` : item.kind === 'flexibility' ? `${item.sets} × ${item.reps}` : `${fitnessWeightLabel(item)} · ${item.sets} × ${item.reps}`;
-      row.append(label, detail); items.append(row);
+    actions.append(edit, remove); header.append(title, actions); card.append(header);
+    const items = routine.items || [];
+    const matrix = document.createElement('div'); matrix.className = 'fitness-matrix-scroll'; matrix.setAttribute('role', 'region'); matrix.setAttribute('aria-label', `${routine.name} movement details`);
+    const table = document.createElement('table'); table.className = 'fitness-matrix';
+    const head = document.createElement('thead'); const headRow = document.createElement('tr');
+    const corner = document.createElement('th'); corner.scope = 'col'; corner.textContent = 'Movement'; headRow.append(corner);
+    for (const item of items) { const th = document.createElement('th'); th.scope = 'col'; th.textContent = item.name; headRow.append(th); }
+    head.append(headRow); table.append(head);
+    const body = document.createElement('tbody');
+    const attributes = routineKind === 'cardio'
+      ? [{ label: 'Type', value: (item) => fitnessCardioLabel(item.activityType) }, { label: 'Duration', value: (item) => `${item.durationMinutes} min` }, { label: 'Effort', value: (item) => item.effort || 'moderate' }]
+      : routineKind === 'flexibility'
+        ? [{ label: 'Sets × reps', value: (item) => `${item.sets} × ${item.reps}` }]
+        : [{ label: 'Load', value: (item) => fitnessWeightLabel(item) }, { label: 'Sets × reps', value: (item) => `${item.sets} × ${item.reps}` }];
+    for (const attribute of attributes) {
+      const row = document.createElement('tr'); const label = document.createElement('th'); label.scope = 'row'; label.textContent = attribute.label; row.append(label);
+      for (const item of items) { const value = document.createElement('td'); value.textContent = attribute.value(item); row.append(value); }
+      body.append(row);
     }
-    card.append(items); list.append(card);
+    table.append(body); matrix.append(table); card.append(matrix); list.append(card);
     if (routine.postWorkout?.durationMinutes) {
       const followup = document.createElement('p'); followup.className = 'fitness-post-workout'; followup.textContent = `After workout · ${routine.postWorkout.activity} · ${routine.postWorkout.durationMinutes} min`; card.append(followup);
     }
@@ -2419,7 +2493,7 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
     <div class="fitness-post-workout-fields field-wide"><label class="field dialog-checkbox"><input name="postWorkoutEnabled" type="checkbox"> Add cardio after this workout</label><div class="fitness-post-workout-inputs"><label class="field">Cardio activity<select name="postWorkoutActivityType"><option value="general">Elliptical / stationary bike (general)</option><option value="elliptical">Elliptical</option><option value="stationary-bike">Stationary bike</option><option value="other">Other cardio</option></select></label><label class="field">Effort<select name="postWorkoutEffort"><option value="easy">Easy</option><option value="moderate" selected>Moderate</option><option value="vigorous">Vigorous</option></select></label><label class="field">Duration (min)<input name="postWorkoutDuration" type="number" min="1" max="240" value="30"></label></div></div>
     <div class="fitness-form-heading field-wide"><strong data-item-heading>Movements</strong><button class="button button-secondary button-small" type="button" data-add-fitness-item>+ Add movement</button></div>
     <div class="fitness-edit-items field-wide"></div>
-    <p class="dialog-copy field-wide">Lift volume is load × implements × sets × reps, shown separately for kg and lb. Calories are rough estimates.</p>`;
+    <p class="dialog-copy field-wide">Enter a combined load such as 185 lb or 2 × 35 lb, and a work pattern such as 4 × 10. Calories are rough estimates.</p>`;
   form.elements.name.value = existing?.name || '';
   form.elements.kind.value = existingKind;
   form.elements.expectedDurationMinutes.value = existing?.expectedDurationMinutes || 30;
@@ -2444,18 +2518,20 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
   const itemList = form.querySelector('.fitness-edit-items');
   const addItem = (item = {}, routineKind = form.elements.kind.value) => {
     const row = document.createElement('fieldset'); row.className = 'fitness-edit-item';
-    row.innerHTML = `<button type="button" class="icon-button fitness-reorder-item" data-reorder-item title="Drag to reorder" aria-label="Drag to reorder ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="grip-vertical" class="icon"></i></button><button type="button" class="icon-button fitness-remove-item" data-remove-item aria-label="Remove ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="x" class="icon"></i></button>
-      <label class="field">${routineKind === 'cardio' ? 'Cardio activity' : 'Movement'}<input name="name" required maxlength="60" placeholder="${routineKind === 'cardio' ? 'Cycling, running' : 'Squat, bench press'}"></label>
-      <div class="fitness-lift-fields"><label class="field">Load<span class="fitness-weight-input"><input name="weight" type="number" min="0" max="2000" step="0.25" placeholder="60"><select name="weightUnit" aria-label="Weight unit"><option value="kg">kg</option><option value="lb">lb</option></select></span></label><label class="field">Implements<input name="implementCount" type="number" min="1" max="20" value="1" title="For example, enter 2 for a pair of dumbbells"></label><label class="field">Sets<input name="sets" type="number" min="1" max="30" value="4"></label><label class="field">Reps<input name="reps" type="number" min="1" max="100" value="10"></label></div>
+    row.innerHTML = `<div class="fitness-item-topline"><label class="field">${routineKind === 'cardio' ? 'Cardio activity' : 'Movement'}<input name="name" required maxlength="60" placeholder="${routineKind === 'cardio' ? 'Cycling, running' : 'Squat, bench press'}"></label><button type="button" class="icon-button fitness-reorder-item" data-reorder-item title="Drag to reorder" aria-label="Drag to reorder ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="grip-vertical" class="icon"></i></button><button type="button" class="icon-button fitness-remove-item" data-remove-item aria-label="Remove ${routineKind === 'cardio' ? 'block' : 'movement'}"><i data-lucide="x" class="icon"></i></button></div>
+      <div class="fitness-lift-fields"><label class="field">Load<input class="fitness-combined-input" name="loadEntry" type="text" inputmode="decimal" placeholder="185 lb or 2 × 35 lb" title="Include the number of implements when needed, such as 2 × 35 lb"></label><label class="field">Sets × reps<input class="fitness-combined-input" name="workEntry" type="text" inputmode="numeric" placeholder="4 × 10"></label></div>
       <div class="fitness-cardio-fields" hidden><label class="field">Activity type<select name="activityType"><option value="general">General cardio</option><option value="elliptical">Elliptical</option><option value="stationary-bike">Stationary bike</option><option value="other">Other</option></select></label><label class="field">Effort<select name="effort"><option value="easy">Easy</option><option value="moderate" selected>Moderate</option><option value="vigorous">Vigorous</option></select></label><label class="field">Duration (min)<input name="durationMinutes" type="number" min="1" max="600" value="20"></label></div>
-      <div class="fitness-flexibility-fields" hidden><label class="field">Sets<input name="flexSets" type="number" min="1" max="30" value="1"></label><label class="field">Reps / holds<input name="flexReps" type="number" min="1" max="100" value="15"></label></div>`;
+      <div class="fitness-flexibility-fields" hidden><label class="field">Sets × reps / holds<input class="fitness-combined-input" name="flexWork" type="text" inputmode="numeric" placeholder="1 × 15"></label></div>`;
     row.elements.name.value = item.name || '';
     const weight = fitnessWeightParts(item);
-    row.elements.weight.value = weight.value;
-    row.elements.weightUnit.value = weight.unit;
-    row.elements.implementCount.value = item.implementCount || 1;
+    row.dataset.weightUnit = weight.unit;
+    row.elements.loadEntry.value = fitnessLoadInputValue(item);
+    row.elements.workEntry.value = item.kind === 'lift' ? `${item.sets || 4} × ${item.reps || 10}` : '4 × 10';
+    row.elements.flexWork.value = `${item.sets || 1} × ${item.reps || 15}`;
     for (const key of ['sets', 'reps', 'durationMinutes', 'met', 'activityType', 'effort']) if (item[key] != null && row.elements[key]) row.elements[key].value = item[key];
-    if (item.kind === 'flexibility') { row.elements.flexSets.value = item.sets || 1; row.elements.flexReps.value = item.reps || 15; }
+    row.elements.loadEntry.addEventListener('input', () => { row.elements.loadEntry.setCustomValidity(parseFitnessLoadInput(row.elements.loadEntry.value, row.dataset.weightUnit).valid ? '' : 'Enter a load such as 185 lb or 2 × 35 kg.'); });
+    row.elements.workEntry.addEventListener('input', () => { row.elements.workEntry.setCustomValidity(parseFitnessSetRepInput(row.elements.workEntry.value).valid ? '' : 'Enter sets × reps, such as 4 × 10.'); });
+    row.elements.flexWork.addEventListener('input', () => { row.elements.flexWork.setCustomValidity(parseFitnessSetRepInput(row.elements.flexWork.value, 30, 100).valid ? '' : 'Enter sets × reps, such as 1 × 15.'); });
     row.querySelector('[data-remove-item]').addEventListener('click', () => row.remove());
     itemList.append(row); enableNativeReordering(itemList, '.fitness-edit-item', () => 'fitness-item', null, '[data-reorder-item]'); renderIcons(row);
   };
@@ -2486,12 +2562,10 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
       row.querySelector('.fitness-lift-fields').hidden = !(!cardio && !flexibility);
       row.querySelector('.fitness-cardio-fields').hidden = !cardio;
       row.querySelector('.fitness-flexibility-fields').hidden = !flexibility;
-      row.elements.implementCount.required = kind === 'lift';
-      row.elements.sets.required = kind === 'lift';
-      row.elements.reps.required = kind === 'lift';
+      row.elements.workEntry.required = kind === 'lift';
+      row.elements.loadEntry.required = false;
       row.elements.durationMinutes.required = cardio;
-      row.elements.flexSets.required = flexibility;
-      row.elements.flexReps.required = flexibility;
+      row.elements.flexWork.required = flexibility;
     }
   };
   const setRoutineKind = (kind, items = []) => {
@@ -2528,8 +2602,8 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
       return kind === 'cardio'
         ? { kind, name: row.elements.name.value.trim(), activityType: row.elements.activityType.value, effort: row.elements.effort.value, durationMinutes: Number(row.elements.durationMinutes.value), met: fitnessCardioMET(row.elements.activityType.value, row.elements.effort.value) }
         : kind === 'flexibility'
-          ? { kind, name: row.elements.name.value.trim(), sets: Number(row.elements.flexSets.value), reps: Number(row.elements.flexReps.value) }
-          : { kind, name: row.elements.name.value.trim(), weight: row.elements.weight.value === '' ? '' : Number(row.elements.weight.value), weightUnit: row.elements.weightUnit.value, implementCount: Number(row.elements.implementCount.value), sets: Number(row.elements.sets.value), reps: Number(row.elements.reps.value) };
+          ? (() => { const pattern = parseFitnessSetRepInput(row.elements.flexWork.value, 30, 100); return { kind, name: row.elements.name.value.trim(), sets: pattern.sets, reps: pattern.reps }; })()
+          : (() => { const load = parseFitnessLoadInput(row.elements.loadEntry.value, row.dataset.weightUnit); const pattern = parseFitnessSetRepInput(row.elements.workEntry.value); return { kind, name: row.elements.name.value.trim(), weight: load.weight, weightUnit: load.weightUnit, implementCount: load.implementCount, sets: pattern.sets, reps: pattern.reps }; })();
     });
     if (!items.length) return;
     const routines = getFitnessRoutines();
@@ -2565,38 +2639,6 @@ function showFitnessRoutineForm(existing = null, followingFrom = null, scheduleS
     save.disabled = true; save.textContent = 'Updating schedule…';
     try { await syncFitnessSchedules(routines); dialog.close(); renderFitness(); }
     catch (error) { window.alert(`Routine saved, but Calendar/Todos could not be updated: ${error.message}`); save.disabled = false; save.textContent = existing ? 'Save routine' : 'Save routine'; }
-  });
-}
-
-function showFitnessScheduleForm(routine) {
-  const form = document.createElement('form'); form.className = 'dialog-form fitness-schedule-form';
-  const today = nextFitnessDate(routine.days || []);
-  form.innerHTML = `<label class="field field-wide">Workout date<input name="date" type="date" required value="${today}"></label>
-    <label class="field field-wide dialog-checkbox"><input name="allDay" type="checkbox"> I know the day, but not the start time yet (all-day event)</label>
-    <label class="field" data-fitness-time>Start time<input name="time" type="time" value="17:30" required></label>
-    <label class="field" data-fitness-time>Duration<input name="duration" type="number" min="5" max="600" step="1" value="${Math.max(5, fitnessEstimate(routine).minutes)}" required> minutes</label>
-    <p class="dialog-copy field-wide">This adds a one-off workout to the Fitness calendar and a task due that day.</p>`;
-  form.elements.allDay.addEventListener('change', () => { const allDay = form.elements.allDay.checked; form.querySelectorAll('[data-fitness-time]').forEach((field) => { field.hidden = allDay; }); form.elements.time.required = !allDay; form.elements.duration.required = !allDay; });
-  const cancel = document.createElement('button'); cancel.className = 'button button-secondary'; cancel.type = 'button'; cancel.textContent = 'Cancel';
-  const save = document.createElement('button'); save.className = 'button button-primary'; save.type = 'submit'; save.textContent = 'Add to calendar';
-  const dialog = openDialog('Add one-off workout', form, [cancel, save]); cancel.addEventListener('click', () => dialog.close()); save.addEventListener('click', () => form.requestSubmit());
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault(); save.disabled = true;
-    const allDay = form.elements.allDay.checked; const date = form.elements.date.value; const estimate = fitnessEstimate(routine);
-    const startAt = allDay ? date : `${date}T${form.elements.time.value}:00`;
-    const endAt = allDay ? date : `${localDateTimeValue(new Date(new Date(startAt).getTime() + Number(form.elements.duration.value) * 60000))}:00`;
-    const details = (routine.items || []).map((item) => item.kind === 'cardio' ? `${item.name} · ${fitnessCardioLabel(item.activityType)} · ${item.durationMinutes} min · ${item.effort || 'moderate'}` : item.kind === 'flexibility' ? `${item.name} · ${item.sets} × ${item.reps}` : `${item.name} · ${fitnessWeightLabel(item)} · ${item.sets} × ${item.reps}`).join('\n');
-    const scheduledMinutes = allDay ? estimate.minutes : Number(form.elements.duration.value);
-    const scheduledEstimate = fitnessEstimate({ ...routine, expectedDurationMinutes: scheduledMinutes });
-    const cardioNote = routine.postWorkout?.durationMinutes ? `\nAfter workout: ${routine.postWorkout.activity} · ${routine.postWorkout.durationMinutes} min · ${routine.postWorkout.effort || 'moderate'}` : '';
-    const volumeNote = routine.kind === 'lift' ? ` · total volume ${fitnessVolume(routine)}` : '';
-    const calorieNote = scheduledEstimate.calories == null ? 'calorie estimate unavailable: add a weight reading in Health' : `estimated ${scheduledEstimate.calories} kcal`;
-    const description = `${routine.name}\n${details}${cardioNote}\nPlanned ${scheduledMinutes} min · ${calorieNote}${volumeNote}`;
-    try {
-      await window.dashboard.createCalendarEvent({ title: routine.name, description, category: 'routine', startAt, endAt, allDay, calendarId: 'local-fitness', calendarName: 'Fitness', calendarColor: 'green', color: 'green', source_plugin_id: 'calendar' });
-      await window.dashboard.createTask({ title: routine.name, detail: `Workout planned · ${scheduledMinutes} min${allDay ? ' · all day' : ` · ${form.elements.time.value}`}${volumeNote}`, category: 'health', dueAt: allDay ? `${date}T12:00:00` : startAt });
-      dialog.close(); window.location.hash = 'calendar';
-    } catch (error) { save.disabled = false; window.alert(`Could not schedule workout: ${error.message}`); }
   });
 }
 

@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('dashboard', Object.freeze({
   savePlugin: (plugin) => ipcRenderer.invoke('dashboard:save-plugin', plugin),
   getPluginSetting: (pluginId, key) => ipcRenderer.invoke('dashboard:get-plugin-setting', pluginId, key),
   setPluginSetting: (pluginId, key, value) => ipcRenderer.invoke('dashboard:set-plugin-setting', pluginId, key, value),
+  getAppSetting: (key) => ipcRenderer.invoke('dashboard:get-app-setting', key),
+  setAppSetting: (key, value) => ipcRenderer.invoke('dashboard:set-app-setting', key, value),
   createPlugin: (plugin) => ipcRenderer.invoke('dashboard:create-plugin', plugin),
   uninstallPlugin: (id) => ipcRenderer.invoke('dashboard:uninstall-plugin', id),
   installPlugin: (id) => ipcRenderer.invoke('dashboard:install-plugin', id),

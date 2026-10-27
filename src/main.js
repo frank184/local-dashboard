@@ -171,6 +171,8 @@ function registerIpcHandlers() {
   });
   ipcMain.handle('dashboard:get-plugin-setting', (_event, pluginId, key) => getPluginSetting(pluginId, key));
   ipcMain.handle('dashboard:set-plugin-setting', (_event, pluginId, key, value) => setPluginSetting(pluginId, key, value));
+  ipcMain.handle('dashboard:get-app-setting', (_event, key) => getAppSetting(key));
+  ipcMain.handle('dashboard:set-app-setting', (_event, key, value) => setAppSetting(key, value));
   ipcMain.handle('dashboard:create-plugin', (_event, plugin) => Plugin.create({ name: plugin.name.trim(), domain_id: plugin.domainId, kind: plugin.kind, description: plugin.description, icon: plugin.icon }).id);
   ipcMain.handle('dashboard:uninstall-plugin', (_event, id) => Plugin.uninstallPlugin(id));
   ipcMain.handle('dashboard:install-plugin', (_event, id) => Plugin.installPlugin(id));
@@ -387,6 +389,22 @@ function setPluginSetting(pluginId, stateKey, value) {
   ApplicationRecord.execute(`INSERT INTO plugin_state (plugin_id, state_key, value_json, updated_at)
     VALUES (?, ?, ?, datetime('now'))
     ON CONFLICT(plugin_id, state_key) DO UPDATE SET value_json = excluded.value_json, updated_at = datetime('now')`, pluginId, stateKey.trim(), valueJson);
+  return value;
+}
+
+function getAppSetting(settingKey) {
+  const row = ApplicationRecord.query('SELECT value_json FROM app_settings WHERE setting_key = ?', settingKey)[0];
+  if (!row) return null;
+  try { return JSON.parse(row.value_json); } catch { return null; }
+}
+
+function setAppSetting(settingKey, value) {
+  if (typeof settingKey !== 'string' || !settingKey.trim()) throw new Error('App setting key is required.');
+  const valueJson = JSON.stringify(value);
+  if (valueJson === undefined) throw new Error('App setting must be JSON serializable.');
+  ApplicationRecord.execute(`INSERT INTO app_settings (setting_key, value_json, updated_at)
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at = datetime('now')`, settingKey.trim(), valueJson);
   return value;
 }
 

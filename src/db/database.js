@@ -234,6 +234,19 @@ function migrate(db) {
       PRAGMA user_version = 13;
     `);
   }
+
+  if (version < 14) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE IF NOT EXISTS app_settings (
+        setting_key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      PRAGMA user_version = 14;
+      COMMIT;
+    `);
+  }
 }
 
 function seedBuiltIns(db) {
